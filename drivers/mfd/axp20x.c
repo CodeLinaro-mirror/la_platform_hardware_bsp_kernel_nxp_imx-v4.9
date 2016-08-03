@@ -836,8 +836,7 @@ int axp20x_device_probe(struct axp20x_dev *axp20x)
 				  axp20x->regmap_irq_chip,
 				  &axp20x->regmap_irqc);
 	if (ret) {
-		dev_err(axp20x->dev, "failed to add irq chip: %d\n", ret);
-		return ret;
+		dev_warn(axp20x->dev, "failed to add irq chip: %d\n", ret);
 	}
 
 	ret = mfd_add_devices(axp20x->dev, -1, axp20x->cells,
