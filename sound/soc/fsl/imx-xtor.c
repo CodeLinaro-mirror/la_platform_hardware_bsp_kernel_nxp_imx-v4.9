@@ -50,7 +50,10 @@ struct imx_xtor_data {
 	struct platform_device *asrc_pdev;
 	u32 asrc_rate;
 	u32 asrc_format;
-	u32 cpu_master;
+	u32 tx_cb_slave;
+	u32 tx_cf_slave;
+	u32 rx_cb_slave;
+	u32 rx_cf_slave;
 	struct clk *codec_clk;
 };
 
@@ -81,17 +84,34 @@ static int imx_xtor_hw_params(struct snd_pcm_substream *substream,
 	struct cpu_priv *cpu_priv = &data->cpu_priv;
 	struct device *dev = rtd->card->dev;
 	unsigned int fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF;
+	unsigned int ms_fmt = 0;
 	int ret, dir;
 	u32 freq;
 
-	/* For playback the XTOR is slave, and for record is master */
-	fmt |= tx ? SND_SOC_DAIFMT_CBS_CFS : SND_SOC_DAIFMT_CBM_CFM;
 	dir = tx ? SND_SOC_CLOCK_OUT : SND_SOC_CLOCK_IN;
 
-	/* In iot board, cpu works as master */
-	if(data->cpu_master) {
-		fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS;
+	/* flexible config */
+	if(tx) {
+		if( (!data->tx_cb_slave) && (!data->tx_cf_slave) )
+			ms_fmt = SND_SOC_DAIFMT_CBS_CFS;
+		else if( (!data->tx_cb_slave) && data->tx_cf_slave )
+			ms_fmt = SND_SOC_DAIFMT_CBS_CFM;
+		else if( data->tx_cb_slave && (!data->tx_cf_slave) )
+			ms_fmt = SND_SOC_DAIFMT_CBM_CFS;
+		else
+			ms_fmt = SND_SOC_DAIFMT_CBM_CFM;
+	} else {
+		if( (!data->rx_cb_slave) && (!data->rx_cf_slave) )
+			ms_fmt = SND_SOC_DAIFMT_CBS_CFS;
+		else if( (!data->rx_cb_slave) && data->rx_cf_slave )
+			ms_fmt = SND_SOC_DAIFMT_CBS_CFM;
+		else if( data->rx_cb_slave && (!data->rx_cf_slave) )
+			ms_fmt = SND_SOC_DAIFMT_CBM_CFS;
+		else
+			ms_fmt = SND_SOC_DAIFMT_CBM_CFM;
 	}
+
+	fmt |= ms_fmt;
 
 	/* set cpu DAI configuration */
 	ret = snd_soc_dai_set_fmt(rtd->cpu_dai, fmt);
@@ -185,8 +205,7 @@ static int imx_xtor_probe(struct platform_device *pdev)
 	struct imx_xtor_data *data;
 	int ret;
 	u32 width;
-        int err;
-        u32 cpu_master = 0;
+	int err;
 
 	cpu_np = of_parse_phandle(pdev->dev.of_node, "cpu-dai", 0);
 	if (!cpu_np) {
@@ -201,19 +220,21 @@ static int imx_xtor_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
-	err = of_property_read_u32(pdev->dev.of_node, "cpu-master", &cpu_master);
-	if(0 == err) {
-		dev_info(&pdev->dev, "cpu-master %d\n", cpu_master);
-	} else {
-		cpu_master = 0;
-	}
-	data->cpu_master = cpu_master;
+	err = of_property_read_u32(pdev->dev.of_node, "tx-cb-slave", &data->tx_cb_slave);
+	if(err) data->tx_cb_slave = 0;
+	dev_info(&pdev->dev, "tx bit clock slave %d\n", data->tx_cb_slave);
 
-	asrc_np = of_parse_phandle(pdev->dev.of_node, "asrc-controller", 0);
-	if (asrc_np) {
-		asrc_pdev = of_find_device_by_node(asrc_np);
-		data->asrc_pdev = asrc_pdev;
-	}
+	err = of_property_read_u32(pdev->dev.of_node, "tx-cf-slave", &data->tx_cf_slave);
+	if(err)	data->tx_cf_slave = 0;
+	dev_info(&pdev->dev, "tx frame clock slave %d\n", data->tx_cf_slave);
+
+	err = of_property_read_u32(pdev->dev.of_node, "rx-cb-slave", &data->rx_cb_slave);
+	if(err)	data->rx_cb_slave = 0;
+	dev_info(&pdev->dev, "rx bit clock slave %d\n", data->rx_cb_slave);
+
+	err = of_property_read_u32(pdev->dev.of_node, "rx-cf-slave", &data->rx_cf_slave);
+	if(err)	data->rx_cf_slave = 0;
+	dev_info(&pdev->dev, "rx frame clock slave %d\n", data->rx_cf_slave);
 
 	cpu_pdev = of_find_device_by_node(cpu_np);
 	if (!cpu_pdev) {
