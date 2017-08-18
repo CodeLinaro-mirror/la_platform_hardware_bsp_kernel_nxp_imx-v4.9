@@ -51,6 +51,7 @@ struct imx_xtor_data {
 	u32 asrc_rate;
 	u32 asrc_format;
 	u32 cpu_master;
+	struct clk *codec_clk;
 };
 
 static int imx_xtor_startup(struct snd_pcm_substream *substream)
@@ -219,6 +220,18 @@ static int imx_xtor_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to find SAI platform device\n");
 		ret = -EINVAL;
 		goto fail;
+	}
+
+	data->codec_clk = devm_clk_get(&pdev->dev, "mclk");
+	if (IS_ERR(data->codec_clk)) {
+		data->codec_clk = NULL;
+	} else {
+		dev_info(&pdev->dev, "get mclk\n");
+		ret = clk_prepare_enable(data->codec_clk);
+		if (ret) {
+			dev_err(&pdev->dev, "Failed to enable MCLK: %d\n", ret);
+			goto fail;
+		}
 	}
 
 	if (strstr(cpu_np->name, "esai")) {
