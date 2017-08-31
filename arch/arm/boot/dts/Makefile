@@ -579,7 +579,8 @@ dtb-$(CONFIG_SOC_IMX7D) += \
 	imx7d-sdb-reva-touch.dtb \
 	imx7d-sdb-reva-wm8960.dtb \
 	imx7d-pico-assistant.dtb \
-	imx7d-pico_pi.dtb
+	imx7d-pico_pi.dtb \
+	imx7d-multa.dtb
 dtb-$(CONFIG_SOC_IMX7ULP) += \
 	imx7ulp-14x14-arm2.dtb \
 	imx7ulp-evk.dtb \
