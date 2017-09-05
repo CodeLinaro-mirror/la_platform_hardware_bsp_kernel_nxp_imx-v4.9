@@ -194,11 +194,7 @@
 	imx7d-pico {
 		pinctrl_hog_1: hoggrp-1 {
 			fsl,pins = <
-				MX7D_PAD_ECSPI2_SS0__GPIO4_IO23		0x80000000  /* bt reg on */
 				MX7D_PAD_SD1_CD_B__GPIO5_IO0		0x59 /* baseboard sd cd pin */
-				MX7D_PAD_GPIO1_IO03__CCM_CLKO2		0x7d /* wifi LPO 32K Hz clock */
-				MX7D_PAD_GPIO1_IO07__GPIO1_IO7		0x59 /* pmic sd_vel pin*/
-				MX7D_PAD_GPIO1_IO00__WDOD1_WDOG_B	0x74
 			>;
 		};
 
@@ -498,13 +494,6 @@
 		pinctrl_backlight: backlight {
 			fsl,pins = <
 				MX7D_PAD_GPIO1_IO11__PWM4_OUT   0x0
-			>;
-		};
-
-
-		pinctrl_wdog: wdoggrp {
-			fsl,pins = <
-				MX7D_PAD_GPIO1_IO00__WDOD1_WDOG_B 0x74
 			>;
 		};
 
@@ -853,7 +842,7 @@
 
 &iomuxc_lpsr {
 	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_lcd_vdden>;
+	pinctrl-0 = <&pinctrl_lcd_vdden>, <&pinctrl_gpio_lpsr>;
 
 	imx7d-pico-miscpins {
 		pinctrl_enet_refclk: enet_refclk {
@@ -876,6 +865,17 @@
 		pinctrl_sai1_mclk: sai1_mclk {
 			 fsl,pins = <
 				MX7D_PAD_GPIO1_IO01__SAI1_MCLK  0x1f
+			>;
+		};
+		pinctrl_wdog: wdoggrp {
+			fsl,pins = <
+				MX7D_PAD_GPIO1_IO00__WDOD1_WDOG_B 0x74
+			>;
+		};
+		pinctrl_gpio_lpsr: gpio_lpsr {
+			fsl,pins = <
+				MX7D_PAD_GPIO1_IO03__CCM_CLKO2		0x7d /* wifi LPO 32K Hz clock */
+				MX7D_PAD_GPIO1_IO07__GPIO1_IO7		0x59 /* pmic sd_vel pin*/
 			>;
 		};
 	};
