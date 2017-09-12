@@ -500,6 +500,16 @@ static int sii902x_probe(struct i2c_client *client,
 	}
 
 	mxsfb_get_of_property();
+
+	if (init_fbi) {
+		sii902x.fbi = init_fbi;
+
+		/* Manually trigger a plugin/plugout interrupter to check cable state */
+		schedule_delayed_work(&(sii902x.det_work), msecs_to_jiffies(50));
+	}
+
+	sii902x_in_init_state = 0;
+
 #ifdef CONFIG_EXTCON
 	hdmi_sii902x_edev = devm_extcon_dev_allocate(&sii902x.client->dev, imx_hdmi_extcon_cables);
 	if (IS_ERR(hdmi_sii902x_edev)) {
@@ -512,15 +522,6 @@ static int sii902x_probe(struct i2c_client *client,
 		goto fail;
 	}
 #endif
-
-	if (init_fbi) {
-		sii902x.fbi = init_fbi;
-
-		/* Manually trigger a plugin/plugout interrupter to check cable state */
-		schedule_delayed_work(&(sii902x.det_work), msecs_to_jiffies(50));
-	}
-
-	sii902x_in_init_state = 0;
 fail:
 	return 0;
 }

@@ -2323,7 +2323,7 @@ static int mxc_hdmi_fb_event(struct notifier_block *nb,
 {
 	struct fb_event *event = v;
 	struct mxc_hdmi *hdmi = container_of(nb, struct mxc_hdmi, nb);
-	struct fb_videomode *mode;
+    struct fb_videomode *mode;
 
 	if (strcmp(event->info->fix.id, hdmi->fbi->fix.id))
 		return 0;
