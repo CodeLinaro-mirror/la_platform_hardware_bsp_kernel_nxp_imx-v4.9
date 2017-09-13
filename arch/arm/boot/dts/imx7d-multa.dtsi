@@ -130,10 +130,13 @@
 	status = "okay";
 	pinctrl-assert-gpios = <&gpio5 11 GPIO_ACTIVE_LOW>;
 
+	/* reg: IOMUXC_GPR_GPR1, bit: ENET2_CLK_DIR */
+	gpr = <&gpr 4 0x40000 0x40000>;
+
 	assigned-clocks = <&clks IMX7D_ENET2_TIME_ROOT_SRC>,
 			  <&clks IMX7D_ENET2_TIME_ROOT_CLK>,
 			  <&clks IMX7D_ENET2_REF_ROOT_SRC>,
-			  <&clks IMX7D_ENET2_REF_ROOT_CLK>;
+			  <&clks IMX7D_ENET2_REF_ROOT_DIV>;
 	assigned-clock-parents = <&clks IMX7D_PLL_ENET_MAIN_100M_CLK>, <0>, <&clks IMX7D_PLL_ENET_MAIN_50M_CLK>, <0>;
 	assigned-clock-rates = <0>, <100000000>, <0>, <50000000>;
 
@@ -142,7 +145,7 @@
 		 <&clks IMX7D_ENET_AXI_ROOT_CLK>,
 		 <&clks IMX7D_ENET2_TIME_ROOT_CLK>,
 		 <&clks IMX7D_PLL_ENET_MAIN_125M_CLK>,
-		 <&clks IMX7D_ENET2_REF_ROOT_CLK>;
+		 <&clks IMX7D_ENET2_REF_ROOT_DIV>;
 
 	phy-mode = "rmii";
 
