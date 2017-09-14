@@ -3446,6 +3446,34 @@ static void fec_enet_of_parse_stop_mode(struct platform_device *pdev)
 	fep->gpr.req_bit = out_val[2];
 }
 
+static int of_parse_gpr(struct platform_device *pdev)
+{
+	int ret;
+	struct of_phandle_args args;
+	struct regmap *gpr;
+
+	ret = of_parse_phandle_with_fixed_args(pdev->dev.of_node,
+					       "gpr", 3, 0, &args);
+	if (ret) {
+		dev_info(&pdev->dev, "no gpr property\n");
+		return 0;
+	}
+
+	gpr = syscon_node_to_regmap(args.np);
+	if (IS_ERR(gpr)) {
+		ret = PTR_ERR(gpr);
+		dev_err(&pdev->dev, "failed to get gpr regmap\n");
+		return ret;
+	}
+
+	ret = regmap_update_bits(gpr, args.args[0], args.args[1], args.args[2]);
+
+	dev_info(&pdev->dev, "of_parse_gpr, regmap_update_bits, ret %d, args %d, %d, %d\n",
+					ret, args.args[0], args.args[1], args.args[2]);
+
+	return ret;
+}
+
 static int
 fec_probe(struct platform_device *pdev)
 {
@@ -3587,6 +3615,8 @@ fec_probe(struct platform_device *pdev)
 	ret = clk_prepare_enable(fep->clk_ahb);
 	if (ret)
 		goto failed_clk_ahb;
+
+	of_parse_gpr(pdev);
 
 	fep->reg_phy = devm_regulator_get(&pdev->dev, "phy");
 	if (!IS_ERR(fep->reg_phy)) {
