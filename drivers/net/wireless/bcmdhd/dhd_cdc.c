@@ -1,7 +1,7 @@
 /*
  * DHD Protocol Module for CDC and BDC.
  *
- * Copyright (C) 1999-2016, Broadcom Corporation
+ * Copyright (C) 1999-2017, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_cdc.c 657232 2016-08-31 11:02:44Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: dhd_cdc.c 699163 2017-05-12 05:18:23Z $
  *
  * BDC is like CDC, except it includes a header for data packets to convey
  * packet priority over the bus, and flags (e.g. to indicate checksum status
@@ -46,6 +49,10 @@
 #include <wlfc_proto.h>
 #include <dhd_wlfc.h>
 #endif
+
+#ifdef DHD_ULP
+#include <dhd_ulp.h>
+#endif /* DHD_ULP */
 
 
 #define RETRIES 2		/* # of retries to retrieve matching ioctl response */
@@ -101,13 +108,11 @@ dhdcdc_cmplt(dhd_pub_t *dhd, uint32 id, uint32 len)
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
-
 	do {
 		ret = dhd_bus_rxctl(dhd->bus, (uchar*)&prot->msg, cdc_len);
 		if (ret < 0)
 			break;
 	} while (CDC_IOC_ID(ltoh32(prot->msg.flags)) != id);
-
 
 	return ret;
 }
@@ -220,6 +225,10 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 		return -EIO;
 	}
 
+	if (cmd == WLC_SET_PM) {
+		DHD_TRACE_HW4(("%s: SET PM to %d\n", __FUNCTION__, buf ? *(char *)buf : 0));
+	}
+
 	memset(msg, 0, sizeof(cdc_ioctl_t));
 
 	msg->cmd = htol32(cmd);
@@ -233,6 +242,13 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 
 	if (buf)
 		memcpy(prot->buf, buf, len);
+
+#ifdef DHD_ULP
+	if (buf && (!strncmp(buf, "ulp", sizeof("ulp")))) {
+		/* force all the writes after this point to NOT to use cached sbwad value */
+		dhd_ulp_disable_cached_sbwad(dhd);
+	}
+#endif /* DHD_ULP */
 
 	if ((ret = dhdcdc_msg(dhd)) < 0) {
 		DHD_ERROR(("%s: dhdcdc_msg failed w/status %d\n", __FUNCTION__, ret));
@@ -251,6 +267,12 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 		ret = -EINVAL;
 		goto done;
 	}
+
+#ifdef DHD_ULP
+	/* For ulp prototyping temporary */
+	if ((ret = dhd_ulp_check_ulp_request(dhd, buf)) < 0)
+		goto done;
+#endif /* DHD_ULP */
 
 	/* Check the ERROR flag */
 	if (flags & CDCF_IOC_ERROR)
@@ -271,9 +293,11 @@ dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int len)
 	dhd_prot_t *prot = dhd->prot;
 	int ret = -1;
 	uint8 action;
+	static int error_cnt = 0;
 
 	if ((dhd->busstate == DHD_BUS_DOWN) || dhd->hang_was_sent) {
-		DHD_ERROR(("%s : bus is down. we have nothing to do\n", __FUNCTION__));
+		DHD_ERROR(("%s : bus is down. we have nothing to do - bs: %d, has: %d\n",
+				__FUNCTION__, dhd->busstate, dhd->hang_was_sent));
 		goto done;
 	}
 
@@ -289,7 +313,7 @@ dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int len)
 			ioc->cmd, (unsigned long)ioc->cmd, prot->lastcmd,
 			(unsigned long)prot->lastcmd));
 		if ((ioc->cmd == WLC_SET_VAR) || (ioc->cmd == WLC_GET_VAR)) {
-			DHD_TRACE(("iovar cmd=%s\n", (char*)buf));
+			DHD_TRACE(("iovar cmd=%s\n", buf ? (char*)buf : "\0"));
 		}
 		goto done;
 	}
@@ -304,6 +328,13 @@ dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int len)
 		if (ret > 0)
 			ioc->used = ret - sizeof(cdc_ioctl_t);
 	}
+	// terence 20130805: send hang event to wpa_supplicant
+	if (ret == -EIO) {
+		error_cnt++;
+		if (error_cnt > 2)
+			ret = -ETIMEDOUT;
+	} else
+		error_cnt = 0;
 
 	/* Too many programs assume ioctl() returns 0 on success */
 	if (ret >= 0)
@@ -340,8 +371,9 @@ dhd_prot_iovar_op(dhd_pub_t *dhdp, const char *name,
 void
 dhd_prot_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 {
-	if (!dhdp || !dhdp->prot)
+	if (!dhdp || !dhdp->prot) {
 		return;
+	}
 
 	bcm_bprintf(strbuf, "Protocol CDC: reqid %d\n", dhdp->prot->reqid);
 #ifdef PROP_TXSTATUS
@@ -381,6 +413,17 @@ dhd_prot_hdrpush(dhd_pub_t *dhd, int ifidx, void *PKTBUF)
 	BDC_SET_IF_IDX(h, ifidx);
 }
 #undef PKTBUF	/* Only defined in the above routine */
+
+uint
+dhd_prot_hdrlen(dhd_pub_t *dhd, void *PKTBUF)
+{
+	uint hdrlen = 0;
+#ifdef BDC
+	/* Length of BDC(+WLFC) headers pushed */
+	hdrlen = BDC_HEADER_LEN + (((struct bdc_header *)PKTBUF)->dataOffset * 4);
+#endif
+	return hdrlen;
+}
 
 int
 dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_info,
@@ -478,9 +521,8 @@ dhd_prot_attach(dhd_pub_t *dhd)
 	return 0;
 
 fail:
-	if (cdc != NULL) {
-		DHD_OS_PREFREE(dhd, DHD_PREALLOC_PROT, cdc, sizeof(dhd_prot_t));
-	}
+	if (cdc != NULL)
+		DHD_OS_PREFREE(dhd, cdc, sizeof(dhd_prot_t));
 	return BCME_NOMEM;
 }
 
@@ -491,14 +533,15 @@ dhd_prot_detach(dhd_pub_t *dhd)
 #ifdef PROP_TXSTATUS
 	dhd_wlfc_deinit(dhd);
 #endif
-	DHD_OS_PREFREE(dhd, DHD_PREALLOC_PROT, dhd->prot, sizeof(dhd_prot_t));
+	DHD_OS_PREFREE(dhd, dhd->prot, sizeof(dhd_prot_t));
 	dhd->prot = NULL;
 }
 
 void
 dhd_prot_dstats(dhd_pub_t *dhd)
 {
-/* No stats from dongle added yet, copy bus stats */
+	/*  copy bus stats */
+
 	dhd->dstats.tx_packets = dhd->tx_packets;
 	dhd->dstats.tx_errors = dhd->tx_errors;
 	dhd->dstats.rx_packets = dhd->rx_packets;
@@ -509,12 +552,20 @@ dhd_prot_dstats(dhd_pub_t *dhd)
 }
 
 int
-dhd_prot_init(dhd_pub_t *dhd)
+dhd_sync_with_dongle(dhd_pub_t *dhd)
 {
 	int ret = 0;
 	wlc_rev_info_t revinfo;
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
+#ifdef DHD_FW_COREDUMP
+	/* Check the memdump capability */
+	dhd_get_memdump_info(dhd);
+#endif /* DHD_FW_COREDUMP */
+
+#ifdef BCMASSERT_LOG
+	dhd_get_assert_info(dhd);
+#endif /* BCMASSERT_LOG */
 
 	/* Get the device rev info */
 	memset(&revinfo, 0, sizeof(revinfo));
@@ -523,13 +574,22 @@ dhd_prot_init(dhd_pub_t *dhd)
 		goto done;
 
 
+	DHD_SSSR_DUMP_INIT(dhd);
+
+	dhd_process_cid_mac(dhd, TRUE);
 	ret = dhd_preinit_ioctls(dhd);
+	dhd_process_cid_mac(dhd, FALSE);
 
 	/* Always assumes wl for now */
 	dhd->iswl = TRUE;
 
 done:
 	return ret;
+}
+
+int dhd_prot_init(dhd_pub_t *dhd)
+{
+	return BCME_OK;
 }
 
 void
