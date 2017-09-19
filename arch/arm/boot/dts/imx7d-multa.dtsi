@@ -79,6 +79,8 @@
 	bcmdhd_wlan_0: bcmdhd_wlan@0 {
 		compatible = "android,bcmdhd_wlan";
 		gpios = <&gpio1 2 0>;/* WL_HOST_WAKE */
+		bcmdhd_fw = "/system/etc/firmware/bcm/fw_bcmdhd.bin";
+		bcmdhd_nv="/system/etc/firmware/bcm/bcmdhd.cal";
 		wlreg_on-supply = <&wlreg_on>;
 		clocks = <&clks IMX7D_CLKO2_ROOT_DIV>;
 		assigned-clocks = <&clks IMX7D_CLKO2_ROOT_SRC>;
