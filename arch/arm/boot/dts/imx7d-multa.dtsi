@@ -79,6 +79,9 @@
 	bcmdhd_wlan_0: bcmdhd_wlan@0 {
 		compatible = "android,bcmdhd_wlan";
 		wlreg_on-supply = <&wlreg_on>;
+		clocks = <&clks IMX7D_CLKO2_ROOT_DIV>;
+		assigned-clocks = <&clks IMX7D_CLKO2_ROOT_SRC>;
+		assigned-clock-parents = <&clks IMX7D_CKIL>;
 	};
 
 	bt_rfkill {
