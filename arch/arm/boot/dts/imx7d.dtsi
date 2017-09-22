@@ -132,7 +132,6 @@
 		pmu {
 			compatible = "arm,cortex-a7-pmu";
 			interrupts = <GIC_SPI 92 IRQ_TYPE_LEVEL_HIGH>;
-			status = "disabled";
 		};
 
 		ocrams_ddr: sram@00900000 {
