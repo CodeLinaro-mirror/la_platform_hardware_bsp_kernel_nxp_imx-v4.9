@@ -72,6 +72,7 @@
 
 		bcmdhd_wlan_0: bcmdhd_wlan@0 {
 				   compatible = "android,bcmdhd_wlan";
+				   gpios = <&gpio2 15 0>; /* WL_HOST_WAKE */
 				   wlreg_on-supply = <&wlreg_on>;
 		};
 	};
