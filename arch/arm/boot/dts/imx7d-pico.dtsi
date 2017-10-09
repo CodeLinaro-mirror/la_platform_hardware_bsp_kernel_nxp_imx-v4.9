@@ -100,6 +100,31 @@
 		status = "okay";
 	};
 
+	trusty_ipi: interrupt-controller@0 {
+		compatible = "android,CustomIPI";
+		interrupt-controller;
+		#interrupt-cells = <1>;
+	};
+
+	trusty {
+		compatible = "android,trusty-smc-v1";
+		ranges;
+		#address-cells = <2>;
+		#size-cells = <2>;
+		trusty-virtio {
+			compatible = "android,trusty-virtio-v1";
+		};
+		irq {
+			compatible = "android,trusty-irq-v1";
+			interrupt-templates = <&trusty_ipi 0>,
+					<&intc 1 GIC_PPI 0>,
+					<&intc 1 GIC_SPI 0>;
+			interrupt-ranges = < 0  15 0>,
+					<16  31 1>,
+					<32 223 2>;
+		};
+	};
+
 	bcmdhd_wlan_0: bcmdhd_wlan@0 {
 		compatible = "android,bcmdhd_wlan";
 		pinctrl-names = "default";
