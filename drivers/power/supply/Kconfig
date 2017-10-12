@@ -525,4 +525,10 @@ config SABRESD_MAX8903
          sabresd board.The driver supports controlling charger and battery
          based on the status of charger connections with interrupt handlers.
 
+config BATTERY_DUMMY
+	tristate "Dummy battery driver"
+	depends on ANDROID
+	help
+	  Say Y to enable support for dummy battery and USB power.
+
 endif # POWER_SUPPLY
