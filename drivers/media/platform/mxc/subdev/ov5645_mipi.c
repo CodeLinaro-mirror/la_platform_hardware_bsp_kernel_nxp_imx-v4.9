@@ -455,7 +455,6 @@ static void ov5645_reset(void)
 	gpio_set_value(rst_gpio, 1);
 	msleep(5);
 
-	gpio_set_value(pwn_gpio, 0);
 }
 
 static int ov5645_regulator_enable(struct device *dev)
@@ -529,9 +528,16 @@ static s32 ov5645_write_reg(u16 reg, u8 val)
 	au8Buf[2] = val;
 
 	if (i2c_master_send(ov5645_data.i2c_client, au8Buf, 3) < 0) {
-		pr_err("%s:write reg error:reg=%x,val=%x\n",
+		pr_err("%s:write reg error:reg=%x,val=%x, retrying once\n",
 			__func__, reg, val);
-		return -1;
+
+		msleep(1);
+
+		if (i2c_master_send(ov5645_data.i2c_client, au8Buf, 3) < 0) {
+			pr_err("%s:write reg error:reg=%x,val=%x, failed again, returning\n",
+				__func__, reg, val);
+			return -1;
+		}
 	}
 
 	return 0;
