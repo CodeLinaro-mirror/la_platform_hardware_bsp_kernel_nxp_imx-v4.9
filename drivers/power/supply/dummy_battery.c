@@ -56,7 +56,7 @@ static int dummy_battery_get_property(struct power_supply *psy,
     int ret = 0;
     switch (psp) {
         case POWER_SUPPLY_PROP_STATUS:
-            val->intval = POWER_SUPPLY_STATUS_FULL;
+            val->intval = POWER_SUPPLY_STATUS_CHARGING;
             break;
         case POWER_SUPPLY_PROP_HEALTH:
             val->intval = POWER_SUPPLY_HEALTH_GOOD;
