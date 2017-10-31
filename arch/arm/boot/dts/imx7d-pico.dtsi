@@ -611,6 +611,10 @@
 	};
 };
 
+&arch_timer {
+	/delete-property/ arm,cpu-registers-not-fw-configured;
+};
+
 &pwm1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_pwm1>;

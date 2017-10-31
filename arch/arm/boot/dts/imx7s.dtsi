@@ -300,7 +300,7 @@
 			interrupt-parent = <&intc>;
 		};
 
-		timer {
+		arch_timer: timer@0 {
 			compatible = "arm,armv7-timer";
 			arm,cpu-registers-not-fw-configured;
 			interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
