@@ -46,9 +46,26 @@ void __init imx_scu_map_io(void)
 	imx_scu_base = IMX_IO_ADDRESS(base);
 }
 
+static bool imx_use_trusty_os(void)
+{
+#ifdef CONFIG_TRUSTY
+	if(cpu_is_imx7d() &&
+		of_find_compatible_node(NULL, NULL, "android,trusty-smc-v1")) {
+		return true;
+	} else
+		return false;
+
+#else
+	return false;
+#endif
+}
+
 static int imx_boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
-	imx_set_cpu_jump(cpu, v7_secondary_startup);
+	if (imx_use_trusty_os()) {
+		imx_set_cpu_arg(cpu, virt_to_phys(v7_secondary_startup));
+	} else
+		imx_set_cpu_jump(cpu, v7_secondary_startup);
 	imx_enable_cpu(cpu, true);
 	return 0;
 }
