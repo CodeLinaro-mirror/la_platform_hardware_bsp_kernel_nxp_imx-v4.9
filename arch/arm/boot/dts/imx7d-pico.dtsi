@@ -72,6 +72,8 @@
 		compatible = "android,bcmdhd_wlan";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_wifi_ctrl>;
+		bcmdhd_fw = "/system/etc/firmware/bcm/fw_bcmdhd.bin";
+		bcmdhd_nv="/system/etc/firmware/bcm/bcmdhd.cal";
 		status = "okay";
 		gpios = <&gpio4 19 0>; /*WL_HOST_WAKE*/
 		wlreg_on-supply = <&wlreg_on>;
