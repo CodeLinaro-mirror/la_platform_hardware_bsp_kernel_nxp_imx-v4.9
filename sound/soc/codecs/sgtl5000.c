@@ -31,6 +31,7 @@
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 #include <linux/mfd/syscon.h>
+#include <linux/reboot.h>
 
 #include "sgtl5000.h"
 
@@ -113,6 +114,8 @@ struct sgtl5000_priv {
 	int revision;
 	u8 micbias_resistor;
 	u8 micbias_voltage;
+	struct notifier_block sgtl5000_reboot_notifier;
+	struct snd_soc_codec *codec;
 };
 
 /*
@@ -146,6 +149,7 @@ static int mic_bias_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+#if 0
 /*
  * As manual described, ADC/DAC only works when VAG powerup,
  * So enabled VAG before ADC/DAC up.
@@ -183,6 +187,7 @@ static int power_vag_event(struct snd_soc_dapm_widget *w,
 
 	return 0;
 }
+#endif
 
 /* input sources for ADC */
 static const char *adc_mux_text[] = {
@@ -219,16 +224,8 @@ static const struct snd_soc_dapm_widget sgtl5000_dapm_widgets[] = {
 			    mic_bias_event,
 			    SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD),
 
-	SND_SOC_DAPM_PGA("HP", SGTL5000_CHIP_ANA_POWER, 4, 0, NULL, 0),
-	SND_SOC_DAPM_PGA("LO", SGTL5000_CHIP_ANA_POWER, 0, 0, NULL, 0),
-
 	SND_SOC_DAPM_MUX("Capture Mux", SND_SOC_NOPM, 0, 0, &adc_mux),
 	SND_SOC_DAPM_MUX("Headphone Mux", SND_SOC_NOPM, 0, 0, &dac_mux),
-
-	/* aif for i2s input */
-	SND_SOC_DAPM_AIF_IN("AIFIN", "Playback",
-				0, SGTL5000_CHIP_DIG_POWER,
-				0, 0),
 
 	/* aif for i2s output */
 	SND_SOC_DAPM_AIF_OUT("AIFOUT", "Capture",
@@ -236,10 +233,7 @@ static const struct snd_soc_dapm_widget sgtl5000_dapm_widgets[] = {
 				1, 0),
 
 	SND_SOC_DAPM_ADC("ADC", "Capture", SGTL5000_CHIP_ANA_POWER, 1, 0),
-	SND_SOC_DAPM_DAC("DAC", "Playback", SGTL5000_CHIP_ANA_POWER, 3, 0),
 
-	SND_SOC_DAPM_PRE("VAG_POWER_PRE", power_vag_event),
-	SND_SOC_DAPM_POST("VAG_POWER_POST", power_vag_event),
 };
 
 /* routes for sgtl5000 */
@@ -250,15 +244,7 @@ static const struct snd_soc_dapm_route sgtl5000_dapm_routes[] = {
 	{"ADC", NULL, "Capture Mux"},		/* adc_mux --> adc */
 	{"AIFOUT", NULL, "ADC"},		/* adc --> i2s_out */
 
-	{"DAC", NULL, "AIFIN"},			/* i2s-->dac,skip audio mux */
-	{"Headphone Mux", "DAC", "DAC"},	/* dac --> hp_mux */
-	{"LO", NULL, "DAC"},			/* dac --> line_out */
-
 	{"Headphone Mux", "LINE_IN", "LINE_IN"},/* line_in --> hp_mux */
-	{"HP", NULL, "Headphone Mux"},		/* hp_mux --> hp */
-
-	{"LINE_OUT", NULL, "LO"},
-	{"HP_OUT", NULL, "HP"},
 };
 
 /* custom function to fetch info of PCM playback volume */
@@ -1088,6 +1074,66 @@ static int sgtl5000_enable_regulators(struct i2c_client *client)
 	return ret;
 }
 
+//power up widgets, the sequence refs to sound/soc/soc-dapm.c, dapm_up_seq[].
+static void sgtl5000_powerup_widgets(struct snd_soc_codec *codec)
+{
+	dev_info(codec->dev,"sgtl5000_powerup_widgets\n");
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_DIG_POWER,
+			 SGTL5000_I2S_IN_POWERUP, SGTL5000_I2S_IN_POWERUP);
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_ANA_POWER,
+				SGTL5000_DAC_POWERUP, SGTL5000_DAC_POWERUP);
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_ANA_POWER,
+				SGTL5000_HP_POWERUP, SGTL5000_HP_POWERUP);
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_ANA_POWER,
+				SGTL5000_LINE_OUT_POWERUP, SGTL5000_LINE_OUT_POWERUP);
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_ANA_POWER,
+				SGTL5000_VAG_POWERUP, SGTL5000_VAG_POWERUP);
+	msleep(400);
+
+	return;
+}
+
+//power down widgets, the sequence refs to sound/soc/soc-dapm.c, dapm_down_seq[].
+static void sgtl5000_powerdown_widgets(struct snd_soc_codec *codec)
+{
+	dev_info(codec->dev, "sgtl5000_powerdown_widgets\n");
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_ANA_POWER,
+		SGTL5000_VAG_POWERUP, 0);
+	msleep(400);
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_ANA_POWER,
+		SGTL5000_HP_POWERUP, 0);
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_ANA_POWER,
+		SGTL5000_LINE_OUT_POWERUP, 0);
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_ANA_POWER,
+		SGTL5000_DAC_POWERUP, 0);
+
+	snd_soc_update_bits(codec, SGTL5000_CHIP_DIG_POWER,
+		SGTL5000_I2S_IN_POWERUP, 0);
+
+	return;
+}
+
+static int sgtl5000_notify_sys(struct notifier_block *this, unsigned long action,
+              void *data)
+{
+	struct sgtl5000_priv *sgtl5000 = container_of(this, struct sgtl5000_priv, sgtl5000_reboot_notifier);
+
+	if (action == SYS_RESTART)
+		sgtl5000_powerdown_widgets(sgtl5000->codec);
+
+	return NOTIFY_OK;
+}
+
+
 static int sgtl5000_probe(struct snd_soc_codec *codec)
 {
 	int ret;
@@ -1139,6 +1185,17 @@ static int sgtl5000_probe(struct snd_soc_codec *codec)
 	 * Enable DAP in kcontrol and dapm.
 	 */
 	snd_soc_write(codec, SGTL5000_DAP_CTRL, 0);
+
+	sgtl5000_powerup_widgets(codec);
+
+	sgtl5000->codec = codec;
+	sgtl5000->sgtl5000_reboot_notifier.notifier_call = sgtl5000_notify_sys;
+
+	ret = register_reboot_notifier(&sgtl5000->sgtl5000_reboot_notifier);
+	if (ret) {
+		dev_err(codec->dev, "cannot register reboot notifier (err=%d)\n", ret);
+		goto err;
+	}
 
 	return 0;
 
