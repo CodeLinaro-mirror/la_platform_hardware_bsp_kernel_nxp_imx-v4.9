@@ -846,6 +846,17 @@
 	arm-supply = <&sw1a_reg>;
 };
 
+&rsvd_mem {
+	ramoops@0x9bfc0000 {
+		compatible = "ramoops";
+		reg = <0x9bfc0000 0x00040000>;
+		record-size     = <0x00010000>;
+		console-size    = <0x00010000>;
+		ftrace-size     = <0x00010000>;
+		pmsg-size       = <0x00010000>;
+	};
+};
+
 &iomuxc_lpsr {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_lcd_vdden>, <&pinctrl_gpio_lpsr>;
