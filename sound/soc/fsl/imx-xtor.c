@@ -236,6 +236,12 @@ static int imx_xtor_probe(struct platform_device *pdev)
 	if(err)	data->rx_cf_slave = 0;
 	dev_info(&pdev->dev, "rx frame clock slave %d\n", data->rx_cf_slave);
 
+	asrc_np = of_parse_phandle(pdev->dev.of_node, "asrc-controller", 0);
+	if (asrc_np) {
+		asrc_pdev = of_find_device_by_node(asrc_np);
+		data->asrc_pdev = asrc_pdev;
+	}
+
 	cpu_pdev = of_find_device_by_node(cpu_np);
 	if (!cpu_pdev) {
 		dev_err(&pdev->dev, "failed to find SAI platform device\n");

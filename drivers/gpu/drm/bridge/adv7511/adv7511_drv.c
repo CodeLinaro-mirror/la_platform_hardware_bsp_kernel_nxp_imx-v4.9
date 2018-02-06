@@ -9,7 +9,9 @@
 #include <linux/device.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_graph.h>
 #include <linux/slab.h>
 
 #include <drm/drmP.h>
@@ -365,7 +367,7 @@ static void adv7511_power_on(struct adv7511 *adv7511)
 	 */
 	regcache_sync(adv7511->regmap);
 
-	if (adv7511->type == ADV7533)
+	if (adv7511->type == ADV7533 || adv7511->type == ADV7535)
 		adv7533_dsi_power_on(adv7511);
 	adv7511->powered = true;
 }
@@ -382,7 +384,7 @@ static void __adv7511_power_off(struct adv7511 *adv7511)
 static void adv7511_power_off(struct adv7511 *adv7511)
 {
 	__adv7511_power_off(adv7511);
-	if (adv7511->type == ADV7533)
+	if (adv7511->type == ADV7533 || adv7511->type == ADV7535)
 		adv7533_dsi_power_off(adv7511);
 	adv7511->powered = false;
 }
@@ -571,6 +573,8 @@ static int adv7511_get_modes(struct adv7511 *adv7511,
 {
 	struct edid *edid;
 	unsigned int count;
+	u32 bus_format = MEDIA_BUS_FMT_RGB888_1X24;
+	int ret;
 
 	/* Reading the EDID only works if the device is powered */
 	if (!adv7511->powered) {
@@ -598,6 +602,14 @@ static int adv7511_get_modes(struct adv7511 *adv7511,
 	count = drm_add_edid_modes(connector, edid);
 
 	adv7511_set_config_csc(adv7511, connector, adv7511->rgb);
+
+	connector->display_info.bus_flags = DRM_BUS_FLAG_DE_LOW |
+					    DRM_BUS_FLAG_PIXDATA_NEGEDGE;
+
+	ret = drm_display_info_set_bus_formats(&connector->display_info,
+					       &bus_format, 1);
+	if (ret)
+		return ret;
 
 	return count;
 }
@@ -723,21 +735,26 @@ static void adv7511_mode_set(struct adv7511 *adv7511,
 			vsync_polarity = 1;
 	}
 
-	if (mode->vrefresh <= 24000)
+	if (mode->vrefresh <= 24)
 		low_refresh_rate = ADV7511_LOW_REFRESH_RATE_24HZ;
-	else if (mode->vrefresh <= 25000)
+	else if (mode->vrefresh <= 25)
 		low_refresh_rate = ADV7511_LOW_REFRESH_RATE_25HZ;
-	else if (mode->vrefresh <= 30000)
+	else if (mode->vrefresh <= 30)
 		low_refresh_rate = ADV7511_LOW_REFRESH_RATE_30HZ;
 	else
 		low_refresh_rate = ADV7511_LOW_REFRESH_RATE_NONE;
 
-	regmap_update_bits(adv7511->regmap, 0xfb,
-		0x6, low_refresh_rate << 1);
+	if (adv7511->type == ADV7535)
+		regmap_update_bits(adv7511->regmap, 0x4a,
+			0xc, low_refresh_rate << 2);
+	else
+		regmap_update_bits(adv7511->regmap, 0xfb,
+			0x6, low_refresh_rate << 1);
+
 	regmap_update_bits(adv7511->regmap, 0x17,
 		0x60, (vsync_polarity << 6) | (hsync_polarity << 5));
 
-	if (adv7511->type == ADV7533)
+	if (adv7511->type == ADV7533 || adv7511->type == ADV7535)
 		adv7533_mode_set(adv7511, adj_mode);
 
 	drm_mode_copy(&adv7511->curr_mode, adj_mode);
@@ -847,7 +864,7 @@ static int adv7511_bridge_attach(struct drm_bridge *bridge)
 				 &adv7511_connector_helper_funcs);
 	drm_mode_connector_attach_encoder(&adv->connector, bridge->encoder);
 
-	if (adv->type == ADV7533)
+	if (adv->type == ADV7533 || adv->type == ADV7535)
 		ret = adv7533_attach_dsi(adv);
 
 	return ret;
@@ -952,6 +969,11 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	struct adv7511_link_config link_config;
 	struct adv7511 *adv7511;
 	struct device *dev = &i2c->dev;
+#if IS_ENABLED(CONFIG_OF_DYNAMIC)
+	struct device_node *remote_node = NULL, *endpoint = NULL;
+	struct of_changeset ocs;
+	struct property *prop;
+#endif
 	unsigned int main_i2c_addr = i2c->addr << 1;
 	unsigned int edid_i2c_addr = main_i2c_addr + 4;
 	unsigned int val;
@@ -995,12 +1017,14 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	}
 
 	adv7511->regmap = devm_regmap_init_i2c(i2c, &adv7511_regmap_config);
-	if (IS_ERR(adv7511->regmap))
-		return PTR_ERR(adv7511->regmap);
+	if (IS_ERR(adv7511->regmap)) {
+		ret = PTR_ERR(adv7511->regmap);
+		goto of_reconfig;
+	}
 
 	ret = regmap_read(adv7511->regmap, ADV7511_REG_CHIP_REVISION, &val);
 	if (ret)
-		return ret;
+		goto of_reconfig;
 	dev_dbg(dev, "Rev. %d\n", val);
 
 	if (adv7511->type == ADV7511)
@@ -1025,7 +1049,7 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	if (!adv7511->i2c_edid)
 		return -ENOMEM;
 
-	if (adv7511->type == ADV7533) {
+	if (adv7511->type == ADV7533 || adv7511->type == ADV7535) {
 		ret = adv7533_init_cec(adv7511);
 		if (ret)
 			goto err_i2c_unregister_edid;
@@ -1070,6 +1094,45 @@ err_unregister_cec:
 	adv7533_uninit_cec(adv7511);
 err_i2c_unregister_edid:
 	i2c_unregister_device(adv7511->i2c_edid);
+of_reconfig:
+#if IS_ENABLED(CONFIG_OF_DYNAMIC)
+	endpoint = of_graph_get_next_endpoint(dev->of_node, NULL);
+	if (endpoint)
+		remote_node = of_graph_get_remote_port_parent(endpoint);
+
+	if (remote_node) {
+		int num_endpoints = 0;
+
+		/*
+		 * Remote node should have two endpoints (input and output: us)
+		 * If remote node has more than two endpoints, probably that it
+		 * has more outputs, so there is no need to disable it.
+		 */
+		endpoint = NULL;
+		while ((endpoint = of_graph_get_next_endpoint(remote_node,
+							      endpoint)))
+			num_endpoints++;
+
+		if (num_endpoints > 2) {
+			of_node_put(remote_node);
+			return ret;
+		}
+
+		prop = devm_kzalloc(dev, sizeof(*prop), GFP_KERNEL);
+		prop->name = devm_kstrdup(dev, "status", GFP_KERNEL);
+		prop->value = devm_kstrdup(dev, "disabled", GFP_KERNEL);
+		prop->length = 9;
+		of_changeset_init(&ocs);
+		of_changeset_update_property(&ocs, remote_node, prop);
+		ret = of_changeset_apply(&ocs);
+		if (!ret)
+			dev_warn(dev,
+				"Probe failed. Remote port '%s' disabled\n",
+				remote_node->full_name);
+
+		of_node_put(remote_node);
+	};
+#endif
 
 	return ret;
 }
@@ -1078,16 +1141,17 @@ static int adv7511_remove(struct i2c_client *i2c)
 {
 	struct adv7511 *adv7511 = i2c_get_clientdata(i2c);
 
-	if (adv7511->type == ADV7533) {
+	if (adv7511->type == ADV7533 || adv7511->type == ADV7535) {
 		adv7533_detach_dsi(adv7511);
 		adv7533_uninit_cec(adv7511);
 	}
 
 	drm_bridge_remove(&adv7511->bridge);
 
-	i2c_unregister_device(adv7511->i2c_edid);
-
-	kfree(adv7511->edid);
+	if (adv7511->i2c_edid) {
+		i2c_unregister_device(adv7511->i2c_edid);
+		kfree(adv7511->edid);
+	}
 
 	return 0;
 }
@@ -1098,6 +1162,7 @@ static const struct i2c_device_id adv7511_i2c_ids[] = {
 	{ "adv7513", ADV7511 },
 #ifdef CONFIG_DRM_I2C_ADV7533
 	{ "adv7533", ADV7533 },
+	{ "adv7535", ADV7535 },
 #endif
 	{ }
 };
@@ -1109,6 +1174,7 @@ static const struct of_device_id adv7511_of_ids[] = {
 	{ .compatible = "adi,adv7513", .data = (void *)ADV7511 },
 #ifdef CONFIG_DRM_I2C_ADV7533
 	{ .compatible = "adi,adv7533", .data = (void *)ADV7533 },
+	{ .compatible = "adi,adv7535", .data = (void *)ADV7535 },
 #endif
 	{ }
 };

@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2017 Vivante Corporation
+*    Copyright (c) 2014 - 2018 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2017 Vivante Corporation
+*    Copyright (C) 2014 - 2018 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -305,6 +305,7 @@ gceSTATUS gckVGKERNEL_Dispatch(
             &kernelInterface->u.QueryChipIdentity.chipRevision,
             &kernelInterface->u.QueryChipIdentity.productID,
             &kernelInterface->u.QueryChipIdentity.ecoID,
+            &kernelInterface->u.QueryChipIdentity.customerID,
             &kernelInterface->u.QueryChipIdentity.chipFeatures,
             &kernelInterface->u.QueryChipIdentity.chipMinorFeatures,
             &kernelInterface->u.QueryChipIdentity.chipMinorFeatures2

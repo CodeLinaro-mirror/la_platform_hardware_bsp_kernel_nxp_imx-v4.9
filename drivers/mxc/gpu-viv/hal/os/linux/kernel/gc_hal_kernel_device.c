@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2017 Vivante Corporation
+*    Copyright (c) 2014 - 2018 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2017 Vivante Corporation
+*    Copyright (C) 2014 - 2018 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -54,6 +54,7 @@
 
 
 #include "gc_hal_kernel_linux.h"
+#include "gc_hal_kernel_allocator.h"
 #include <linux/pagemap.h>
 #include <linux/seq_file.h>
 #include <linux/mman.h>
@@ -65,10 +66,6 @@
 #define PARENT_FILE         "gpu"
 
 #define gcdDEBUG_FS_WARN    "Experimental debug entry, may be removed in future release, do NOT rely on it!\n"
-
-#ifdef FLAREON
-    static struct dove_gpio_irq_handler gc500_handle;
-#endif
 
 static gckGALDEVICE galDevice;
 
@@ -599,7 +596,7 @@ gc_dump_trigger_show(struct seq_file *m, void *data)
 #if gcdENABLE_3D || gcdENABLE_2D
     seq_printf(m, "Get dump from /proc/kmsg or /sys/kernel/debug/gc/galcore_trace\n");
 
-    if (kernel && kernel->hardware->powerManagement == gcvFALSE)
+    if (kernel && kernel->hardware->options.powerManagement == gcvFALSE)
     {
         _DumpState(kernel);
     }
@@ -856,6 +853,9 @@ _SetupVidMem(
 
                     if (gcmIS_SUCCESS(status))
                     {
+                        gckALLOCATOR allocator = ((PLINUX_MDL)device->contiguousPhysical)->allocator;
+                        device->contiguousVidMem->capability = allocator->capability | gcvALLOC_FLAG_MEMLIMIT;
+                        device->contiguousVidMem->physical = device->contiguousPhysical;
                         device->contiguousBase = physAddr;
                         break;
                     }
@@ -899,6 +899,8 @@ _SetupVidMem(
             }
             else
             {
+                gckALLOCATOR allocator;
+
                 gcmkONERROR(gckOS_RequestReservedMemory(
                     device->os, ContiguousBase, ContiguousSize,
                     "galcore contiguous memory",
@@ -906,11 +908,14 @@ _SetupVidMem(
                     &device->contiguousPhysical
                     ));
 
+                allocator = ((PLINUX_MDL)device->contiguousPhysical)->allocator;
+                device->contiguousVidMem->capability = allocator->capability | gcvALLOC_FLAG_MEMLIMIT;
+                device->contiguousVidMem->physical = device->contiguousPhysical;
                 device->requestedContiguousBase = ContiguousBase;
                 device->requestedContiguousSize = ContiguousSize;
 
                 device->contiguousPhysicalName = 0;
-                device->contiguousSize     = ContiguousSize;
+                device->contiguousSize = ContiguousSize;
             }
         }
     }
@@ -953,17 +958,16 @@ static irqreturn_t isrRoutine(int irq, void *ctxt)
 {
     gceSTATUS status;
     gckGALDEVICE device;
-    gceCORE Core = (gceCORE) gcmPTR2INT32(ctxt);
+    gceCORE core = (gceCORE)gcmPTR2INT32(ctxt) - 1;
 
     device = galDevice;
 
     /* Call kernel interrupt notification. */
-    status = gckKERNEL_Notify(device->kernels[Core], gcvNOTIFY_INTERRUPT, gcvTRUE);
+    status = gckKERNEL_Notify(device->kernels[core], gcvNOTIFY_INTERRUPT, gcvTRUE);
 
     if (gcmIS_SUCCESS(status))
     {
-        up(&device->semas[Core]);
-
+        up(&device->semas[core]);
         return IRQ_HANDLED;
     }
 
@@ -1106,6 +1110,8 @@ gckGALDEVICE_Construct(
     IN gctSIZE_T RegisterMemSizeVG,
     IN gctUINT32 ContiguousBase,
     IN gctSIZE_T ContiguousSize,
+    IN gctUINT32 ExternalBase,
+    IN gctSIZE_T ExternalSize,
     IN gctSIZE_T BankSize,
     IN gctINT FastClear,
     IN gctINT Compression,
@@ -1120,8 +1126,7 @@ gckGALDEVICE_Construct(
     )
 {
     gctUINT32 internalBaseAddress = 0, internalAlignment = 0;
-    gctUINT32 externalBaseAddress = 0, externalAlignment = 0;
-    gctUINT32 horizontalTileSize, verticalTileSize;
+    gctUINT32 externalAlignment = 0;
     gctUINT32 physical;
     gckGALDEVICE device;
     gceSTATUS status;
@@ -1314,19 +1319,15 @@ gckGALDEVICE_Construct(
 
     gcmkONERROR(_SetupVidMem(device, ContiguousBase, ContiguousSize, BankSize, Args));
 
+    /* Set external base and size */
+    device->externalBase = ExternalBase;
+    device->externalSize = ExternalSize;
+
     if (device->irqLines[gcvCORE_MAJOR] != -1)
     {
         gcmkONERROR(gcTA_Construct(device->taos, gcvCORE_MAJOR, &globalTA[gcvCORE_MAJOR]));
 
         gcmkONERROR(gckDEVICE_AddCore(device->device, gcvCORE_MAJOR, Args->chipIDs[gcvCORE_MAJOR], device, &device->kernels[gcvCORE_MAJOR]));
-
-        /* Setup the ISR manager. */
-        gcmkONERROR(gckHARDWARE_SetIsrManager(
-            device->kernels[gcvCORE_MAJOR]->hardware,
-            (gctISRMANAGERFUNC) gckGALDEVICE_Setup_ISR,
-            (gctISRMANAGERFUNC) gckGALDEVICE_Release_ISR,
-            (gctPOINTER)gcvCORE_MAJOR
-            ));
 
         gcmkONERROR(gckHARDWARE_SetFastClear(
             device->kernels[gcvCORE_MAJOR]->hardware, FastClear, Compression
@@ -1370,14 +1371,6 @@ gckGALDEVICE_Construct(
             gcmkONERROR(gcvSTATUS_INVALID_ARGUMENT);
         }
 
-        /* Setup the ISR manager. */
-        gcmkONERROR(gckHARDWARE_SetIsrManager(
-            device->kernels[gcvCORE_2D]->hardware,
-            (gctISRMANAGERFUNC) gckGALDEVICE_Setup_ISR,
-            (gctISRMANAGERFUNC) gckGALDEVICE_Release_ISR,
-            (gctPOINTER)gcvCORE_2D
-            ));
-
         gcmkONERROR(gckHARDWARE_SetPowerManagement(
             device->kernels[gcvCORE_2D]->hardware, PowerManagement
             ));
@@ -1410,7 +1403,7 @@ gckGALDEVICE_Construct(
     }
 
     /* Add core for multiple core. */
-    for (i = gcvCORE_3D1; i <= gcvCORE_3D3; i++)
+    for (i = gcvCORE_3D1; i <= gcvCORE_3D_MAX; i++)
     {
         if (Args->irqs[i] != -1)
         {
@@ -1459,13 +1452,6 @@ gckGALDEVICE_Construct(
                 &device->systemMemorySize,
                 &device->systemMemoryBaseAddress
                 ));
-            /* query the amount of video memory */
-        gcmkONERROR(gckVGHARDWARE_QueryMemory(
-            device->kernels[i]->vg->hardware,
-            &device->internalSize, &internalBaseAddress, &internalAlignment,
-            &device->externalSize, &externalBaseAddress, &externalAlignment,
-            &horizontalTileSize, &verticalTileSize
-            ));
     }
     else
 #endif
@@ -1476,16 +1462,7 @@ gckGALDEVICE_Construct(
                 &device->systemMemorySize,
                 &device->systemMemoryBaseAddress
                 ));
-
-            /* query the amount of video memory */
-        gcmkONERROR(gckHARDWARE_QueryMemory(
-            device->kernels[i]->hardware,
-            &device->internalSize, &internalBaseAddress, &internalAlignment,
-            &device->externalSize, &externalBaseAddress, &externalAlignment,
-            &horizontalTileSize, &verticalTileSize
-            ));
     }
-
 
     /* Grab the first availiable kernel */
     for (i = 0; i < gcdMAX_GPU_COUNT; i++)
@@ -1523,7 +1500,6 @@ gckGALDEVICE_Construct(
             }
 
             device->internalPhysical = (gctPHYS_ADDR)(gctUINTPTR_T) physical;
-            device->internalPhysicalName = gcmPTR_TO_NAME(device->internalPhysical);
             physical += device->internalSize;
         }
     }
@@ -1533,30 +1509,37 @@ gckGALDEVICE_Construct(
         /* create the external memory heap */
         status = gckVIDMEM_Construct(
             device->os,
-            externalBaseAddress, device->externalSize, externalAlignment,
+            device->externalBase, device->externalSize, externalAlignment,
             0, &device->externalVidMem
             );
 
         if (gcmIS_ERROR(status))
         {
-            /* Error, disable internal heap. */
+            /* Error, disable external heap. */
             device->externalSize = 0;
         }
         else
         {
             /* Map external memory. */
-            device->externalLogical
-                = (gctPOINTER) ioremap_nocache(physical, device->externalSize);
-
-            if (device->externalLogical == gcvNULL)
-            {
-                gcmkONERROR(gcvSTATUS_OUT_OF_RESOURCES);
-            }
-
-            device->externalPhysical = (gctPHYS_ADDR)(gctUINTPTR_T) physical;
-            device->externalPhysicalName = gcmPTR_TO_NAME(device->externalPhysical);
-            physical += device->externalSize;
+            gcmkONERROR(gckOS_RequestReservedMemory(
+                    device->os,
+                    device->externalBase, device->externalSize,
+                    "galcore external memory",
+                    gcvTRUE,
+                    &device->externalPhysical
+                    ));
+            device->externalVidMem->physical = device->externalPhysical;
         }
+    }
+
+    if (device->internalPhysical)
+    {
+        device->internalPhysicalName = gcmPTR_TO_NAME(device->internalPhysical);
+    }
+
+    if (device->externalPhysical)
+    {
+        device->externalPhysicalName = gcmPTR_TO_NAME(device->externalPhysical);
     }
 
     if (device->contiguousPhysical)
@@ -1655,10 +1638,16 @@ gckGALDEVICE_Destroy(
             Device->internalVidMem = gcvNULL;
         }
 
+        if (Device->externalPhysical != gcvNULL)
+        {
+            gckOS_ReleaseReservedMemory(
+                Device->os,
+                Device->externalPhysical
+                );
+        }
+
         if (Device->externalLogical != gcvNULL)
         {
-            /* Unmap the external memory. */
-            iounmap(Device->externalLogical);
             Device->externalLogical = gcvNULL;
         }
 
@@ -1679,7 +1668,6 @@ gckGALDEVICE_Destroy(
                     Device->contiguousPhysical
                     ));
             }
-#if !USE_LINUX_PCIE
             else
             {
                 gckOS_ReleaseReservedMemory(
@@ -1690,7 +1678,6 @@ gckGALDEVICE_Destroy(
                 Device->requestedContiguousBase = 0;
                 Device->requestedContiguousSize = 0;
             }
-#endif
 
             Device->contiguousLogical  = gcvNULL;
             Device->contiguousPhysical = gcvNULL;
@@ -1776,6 +1763,23 @@ gckGALDEVICE_Destroy(
     return gcvSTATUS_OK;
 }
 
+static const char *isrNames[] =
+{
+    "galcore:0",
+    "galcore:3d-1",
+    "galcore:3d-2",
+    "galcore:3d-3",
+    "galcore:3d-4",
+    "galcore:3d-5",
+    "galcore:3d-6",
+    "galcore:3d-7",
+    "galcore:2d",
+    "galcore:vg",
+#if gcdDEC_ENABLE_AHB
+    "galcore:dec"
+#endif
+};
+
 /*******************************************************************************
 **
 **  gckGALDEVICE_Setup_ISR
@@ -1816,21 +1820,17 @@ gckGALDEVICE_Setup_ISR(
         gcmkONERROR(gcvSTATUS_GENERIC_IO);
     }
 
-    /* Hook up the isr based on the irq line. */
-#ifdef FLAREON
-    gc500_handle.dev_name  = "galcore interrupt service";
-    gc500_handle.dev_id    = Device;
-    gc500_handle.handler   = isrRoutine;
-    gc500_handle.intr_gen  = GPIO_INTR_LEVEL_TRIGGER;
-    gc500_handle.intr_trig = GPIO_TRIG_HIGH_LEVEL;
+#if defined(__GNUC__) && ((__GNUC__ == 4 && __GNUC_MINOR__ >= 6) || (__GNUC__ > 4))
+    {
+        _Static_assert(gcvCORE_COUNT == gcmCOUNTOF(isrNames),
+                       "Core count is lager than isrNames size");
+    }
+#endif
 
-    ret = dove_gpio_request(
-        DOVE_GPIO0_7, &gc500_handle
-        );
-#else
+    /* Hook up the isr based on the irq line. */
     ret = request_irq(
         Device->irqLines[Core], isrRoutine, gcdIRQF_FLAG,
-        "galcore interrupt service", (gctPOINTER)Core
+        isrNames[Core], (void *)(uintptr_t)(Core + 1)
         );
 
     if (ret != 0)
@@ -1847,7 +1847,6 @@ gckGALDEVICE_Setup_ISR(
 
     /* Mark ISR as initialized. */
     Device->isrInitializeds[Core] = gcvTRUE;
-#endif
 
     gcmkFOOTER_NO();
     return gcvSTATUS_OK;
@@ -1875,22 +1874,10 @@ gckGALDEVICE_Setup_ISR_VG(
     }
 
     /* Hook up the isr based on the irq line. */
-#ifdef FLAREON
-    gc500_handle.dev_name  = "galcore interrupt service";
-    gc500_handle.dev_id    = Device;
-    gc500_handle.handler   = isrRoutineVG;
-    gc500_handle.intr_gen  = GPIO_INTR_LEVEL_TRIGGER;
-    gc500_handle.intr_trig = GPIO_TRIG_HIGH_LEVEL;
-
-    ret = dove_gpio_request(
-        DOVE_GPIO0_7, &gc500_handle
-        );
-#else
     ret = request_irq(
         Device->irqLines[gcvCORE_VG], isrRoutineVG, gcdIRQF_FLAG,
-        "galcore interrupt service for 2D", Device
+        isrNames[gcvCORE_VG], Device
         );
-#endif
 
     if (ret != 0)
     {
@@ -1947,11 +1934,7 @@ gckGALDEVICE_Release_ISR(
     /* release the irq */
     if (Device->isrInitializeds[Core])
     {
-#ifdef FLAREON
-        dove_gpio_free(DOVE_GPIO0_7, "galcore interrupt service");
-#else
-        free_irq(Device->irqLines[Core], (gctPOINTER)Core);
-#endif
+        free_irq(Device->irqLines[Core], (void *)(uintptr_t)(Core + 1));
         Device->isrInitializeds[Core] = gcvFALSE;
     }
 
@@ -1971,12 +1954,7 @@ gckGALDEVICE_Release_ISR_VG(
     /* release the irq */
     if (Device->isrInitializeds[gcvCORE_VG])
     {
-#ifdef FLAREON
-        dove_gpio_free(DOVE_GPIO0_7, "galcore interrupt service");
-#else
         free_irq(Device->irqLines[gcvCORE_VG], Device);
-#endif
-
         Device->isrInitializeds[gcvCORE_VG] = gcvFALSE;
     }
 
@@ -2012,6 +1990,7 @@ gckGALDEVICE_Start_Threads(
     )
 {
     gceSTATUS status;
+    gctUINT i;
 
     gcmkHEADER_ARG("Device=0x%x", Device);
 
@@ -2022,13 +2001,9 @@ gckGALDEVICE_Start_Threads(
 
     gcmkONERROR(_StartThread(threadRoutine, gcvCORE_VG));
 
+    for (i = gcvCORE_3D1; i <= gcvCORE_3D_MAX; i++)
     {
-        gctUINTPTR_T i = gcvCORE_3D1;
-
-        for (; i <= gcvCORE_3D3; i++)
-        {
-            gcmkONERROR(_StartThread(threadRoutine, i));
-        }
+        gcmkONERROR(_StartThread(threadRoutine, i));
     }
 
     gcmkFOOTER_NO();
@@ -2205,7 +2180,7 @@ gckGALDEVICE_Stop(
         {
             gcmkONERROR(gckHARDWARE_SetPowerManagement(
                 Device->kernels[i]->hardware, gcvTRUE
-            ));
+                ));
 
             /* Switch to OFF power state. */
             gcmkONERROR(gckHARDWARE_SetPowerManagementState(

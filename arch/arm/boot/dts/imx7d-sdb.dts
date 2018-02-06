@@ -270,6 +270,17 @@
 	arm-supply = <&sw1a_reg>;
 };
 
+&rsvd_mem {
+	ramoops@0xbbf00000 {
+		compatible = "ramoops";
+		reg = <0xbbf00000 0x00100000>;
+		record-size	= <0x00020000>;
+		console-size	= <0x00020000>;
+		ftrace-size	= <0x00020000>;
+		pmsg-size	= <0x00020000>;
+	};
+};
+
 &ecspi3 {
 	fsl,spi-num-chipselects = <1>;
 	pinctrl-names = "default";
@@ -304,6 +315,7 @@
 
 &csi1 {
 	csi-mux-mipi = <&gpr 0x14 4>;
+	fsl,mipi-mode;
 	status = "okay";
 
 	port {
@@ -360,10 +372,6 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_enet2 &pinctrl_enet2_epdc0_en>;
 	pinctrl-assert-gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
-	assigned-clocks = <&clks IMX7D_ENET2_TIME_ROOT_SRC>,
-			  <&clks IMX7D_ENET2_TIME_ROOT_CLK>;
-	assigned-clock-parents = <&clks IMX7D_PLL_ENET_MAIN_100M_CLK>;
-	assigned-clock-rates = <0>, <100000000>;
 	phy-mode = "rgmii";
 	phy-handle = <&ethphy1>;
 	fsl,magic-packet;
@@ -814,6 +822,20 @@
 	vmmc-supply = <&reg_sd1_vmmc>;
 	enable-sdio-wakeup;
 	keep-power-in-suspend;
+	status = "okay";
+};
+
+&usdhc2 {
+	pinctrl-names = "default", "state_100mhz", "state_200mhz";
+	pinctrl-0 = <&pinctrl_usdhc2>;
+	pinctrl-1 = <&pinctrl_usdhc2_100mhz>;
+	pinctrl-2 = <&pinctrl_usdhc2_200mhz>;
+	enable-sdio-wakeup;
+	keep-power-in-suspend;
+	non-removable;
+	cd-post;
+	pm-ignore-notify;
+	wifi-host;
 	status = "okay";
 };
 
