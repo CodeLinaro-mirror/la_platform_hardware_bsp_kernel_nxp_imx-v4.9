@@ -365,7 +365,6 @@ config SPI_FSL_SPI
 config SPI_FSL_DSPI
 	tristate "Freescale DSPI controller"
 	select REGMAP_MMIO
-	depends on HAS_DMA
 	depends on SOC_VF610 || SOC_LS1021A || ARCH_LAYERSCAPE || COMPILE_TEST
 	help
 	  This enables support for the Freescale DSPI controller in master
@@ -382,7 +381,7 @@ config SPI_FSL_ESPI
 
 config SPI_FSL_LPSPI
 	tristate "Freescale i.MX LPSPI controller"
-	depends on ARCH_MXC || COMPILE_TEST
+	depends on ARCH_MXC || ARCH_MXC_ARM64 || COMPILE_TEST
 	select SPI_BITBANG
 	help
 	  This enables Freescale i.MX LPSPI controllers in master mode.

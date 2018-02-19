@@ -126,6 +126,8 @@ typedef unsigned long dma_addr_t;
 #define ALPHA_MODE_LEGACY	0x2
 #define ALPHA_MODE_PORTER_DUFF	0x3
 
+#define PXP_DEVICE_LEGACY
+
 /* Order significant! */
 enum pxp_channel_status {
 	PXP_CHANNEL_FREE,
@@ -311,6 +313,7 @@ struct pxp_proc_data {
 	unsigned char reagl_en;		/* enable reagl/-d */
 	unsigned char reagl_d_en;	/* enable reagl or reagl-d */
 	unsigned char detection_only;
+	unsigned char pxp_legacy;
 	int lut;
 	unsigned char lut_cleanup;
 	unsigned int lut_status_1;

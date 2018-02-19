@@ -43,8 +43,8 @@
 
 		operating-points = <
 			/* KHz	uV */
-			531648	1125000
-			416072	1025000
+			720000	1125000
+			500210	1025000
 		>;
 		clocks = <&clks IMX7ULP_CLK_ARM>,
 			 <&clks IMX7ULP_CLK_CORE_DIV>,
@@ -53,13 +53,15 @@
 			 <&clks IMX7ULP_CLK_HSRUN_CORE>,
 			 <&clks IMX7ULP_CLK_SPLL_PFD0>,
 			 <&clks IMX7ULP_CLK_SPLL_SEL>,
-			 <&clks IMX7ULP_CLK_FIRC>;
+			 <&clks IMX7ULP_CLK_FIRC>,
+			 <&clks IMX7ULP_CLK_SPLL>;
 		clock-names = "arm", "core_div", "sys_sel", "hsrun_sys_sel",
-			      "hsrun_core", "spll_pfd0", "spll_sel", "firc";
+			      "hsrun_core", "spll_pfd0", "spll_sel", "firc",
+			      "spll";
 		};
 	};
 
-	reserved-memory {
+	rsvd_mem: reserved-memory {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges;
@@ -176,7 +178,7 @@
 		nmi: nmi@40220000 {
 			compatible = "fsl,imx7ulp-nmi";
 			reg = <0x40220000 0x1000>;
-			interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
+			interrupts = <GIC_SPI 90 IRQ_TYPE_LEVEL_HIGH>;
 			status = "okay";
 		};
 
@@ -184,20 +186,6 @@
 			compatible = "fsl,imx7ulp-rpmsg";
 			memory-region = <&rpmsg_reserved>;
 			status = "disabled";
-		};
-
-		snvs: snvs@40230000 {
-			compatible = "fsl,sec-v4.0-mon","syscon", "simple-mfd";
-			reg = <0x40230000 0x10000>;
-
-			snvs_rtc: snvs-rtc-lp{
-				compatible = "fsl,sec-v4.0-mon-rtc-lp";
-				regmap =<&snvs>;
-				offset = <0x34>;
-				interrupts = <GIC_SPI 69 IRQ_TYPE_LEVEL_HIGH>;
-				clock-names = "snvs-rtc";
-				clocks = <&clks IMX7ULP_CLK_SNVS>;
-			};
 		};
 
 		pwm0: tpm@40250000 {
@@ -232,8 +220,9 @@
 			compatible = "fsl,imx7ulp-lpi2c";
 			reg = <0x402B0000 0x10000>;
 			interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&clks IMX7ULP_CLK_LPI2C4>;
-			clock-names = "ipg";
+			clocks = <&clks IMX7ULP_CLK_LPI2C4>,
+				 <&clks IMX7ULP_CLK_NIC1_BUS_DIV>;
+			clock-names = "per", "ipg";
 			assigned-clocks = <&clks IMX7ULP_CLK_LPI2C4>;
 			assigned-clock-parents = <&clks IMX7ULP_CLK_FIRC>;
 			assigned-clock-rates = <48000000>;
@@ -244,8 +233,9 @@
 			compatible = "fsl,imx7ulp-lpi2c";
 			reg = <0x402C0000 0x10000>;
 			interrupts = <GIC_SPI 35 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&clks IMX7ULP_CLK_LPI2C5>;
-			clock-names = "ipg";
+			clocks = <&clks IMX7ULP_CLK_LPI2C5>,
+				 <&clks IMX7ULP_CLK_NIC1_BUS_DIV>;
+			clock-names = "per", "ipg";
 			assigned-clocks = <&clks IMX7ULP_CLK_LPI2C5>;
 			assigned-clock-parents = <&clks IMX7ULP_CLK_FIRC>;
 			assigned-clock-rates = <48000000>;
@@ -255,8 +245,9 @@
 			compatible = "fsl,imx7ulp-spi";
 			reg = <0x40290000 0x10000>;
 			interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&clks IMX7ULP_CLK_LPSPI2>;
-			clock-names = "ipg";
+			clocks = <&clks IMX7ULP_CLK_LPSPI2>,
+				 <&clks IMX7ULP_CLK_DUMMY>;
+			clock-names = "per", "ipg";
 			assigned-clocks = <&clks IMX7ULP_CLK_LPSPI2>;
 			assigned-clock-parents = <&clks IMX7ULP_CLK_FIRC>;
 			assigned-clock-rates = <48000000>;
@@ -267,8 +258,9 @@
 			compatible = "fsl,imx7ulp-spi";
 			reg = <0x402A0000 0x10000>;
 			interrupts = <GIC_SPI 29 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&clks IMX7ULP_CLK_LPSPI3>;
-			clock-names = "ipg";
+			clocks = <&clks IMX7ULP_CLK_LPSPI3>,
+				 <&clks IMX7ULP_CLK_DUMMY>;
+			clock-names = "per", "ipg";
 			assigned-clocks = <&clks IMX7ULP_CLK_LPSPI3>;
 			assigned-clock-parents = <&clks IMX7ULP_CLK_FIRC>;
 			assigned-clock-rates = <48000000>;
@@ -426,8 +418,9 @@
 			compatible = "fsl,imx7ulp-lpi2c";
 			reg = <0x40A40000 0x10000>;
 			interrupts = <GIC_SPI 36 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&clks IMX7ULP_CLK_LPI2C6>;
-			clock-names = "ipg";
+			clocks = <&clks IMX7ULP_CLK_LPI2C6>,
+				 <&clks IMX7ULP_CLK_NIC1_BUS_DIV>;
+			clock-names = "per", "ipg";
 			assigned-clocks = <&clks IMX7ULP_CLK_LPI2C6>;
 			assigned-clock-parents = <&clks IMX7ULP_CLK_FIRC>;
 			assigned-clock-rates = <48000000>;
@@ -438,8 +431,9 @@
 			compatible = "fsl,imx7ulp-lpi2c";
 			reg = <0x40A50000 0x10000>;
 			interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&clks IMX7ULP_CLK_LPI2C7>;
-			clock-names = "ipg";
+			clocks = <&clks IMX7ULP_CLK_LPI2C7>,
+				 <&clks IMX7ULP_CLK_NIC1_BUS_DIV>;
+			clock-names = "per", "ipg";
 			assigned-clocks = <&clks IMX7ULP_CLK_LPI2C7>;
 			assigned-clock-parents = <&clks IMX7ULP_CLK_FIRC>;
 			assigned-clock-rates = <48000000>;
@@ -492,6 +486,7 @@
 			clocks = <&clks IMX7ULP_CLK_DSI>;
 			clock-names = "mipi_dsi_clk";
 			data-lanes-num = <2>;
+			phy-ref-clkfreq = <24000000>;
 			max-data-rate  = <800000000>;
 			sim = <&sim>;
 			status = "disabled";
@@ -615,6 +610,10 @@
 
 	heartbeat-rpmsg {
 		compatible = "fsl,heartbeat-rpmsg";
+	};
+
+	rtc-rpmsg {
+		compatible = "fsl,imx-rpmsg-rtc";
 	};
 
   imx_ion {

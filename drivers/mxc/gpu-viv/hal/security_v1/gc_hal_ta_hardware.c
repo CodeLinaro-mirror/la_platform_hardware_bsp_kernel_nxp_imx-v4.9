@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2017 Vivante Corporation
+*    Copyright (c) 2014 - 2018 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2017 Vivante Corporation
+*    Copyright (C) 2014 - 2018 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -383,7 +383,7 @@ gctaHARDWARE_Construct(
     )
 {
     gceSTATUS status;
-    gcTA_HARDWARE hardware;
+    gcTA_HARDWARE hardware = gcvNULL;
 
     gctaOS os = TA->os;
 
@@ -413,12 +413,18 @@ gctaHARDWARE_Construct(
         0x00000900
         );
 
-    _IdentifyHardwareByDatabase(hardware);
+    gcmkONERROR(_IdentifyHardwareByDatabase(hardware));
 
     *Hardware = hardware;
 
     return gcvSTATUS_OK;
+
 OnError:
+    if (hardware)
+    {
+        gctaOS_Free(hardware);
+    }
+
     return status;
 }
 

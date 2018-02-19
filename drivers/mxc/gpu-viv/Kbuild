@@ -2,7 +2,7 @@
 #
 #    The MIT License (MIT)
 #
-#    Copyright (c) 2014 - 2017 Vivante Corporation
+#    Copyright (c) 2014 - 2018 Vivante Corporation
 #
 #    Permission is hereby granted, free of charge, to any person obtaining a
 #    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 #
 #    The GPL License (GPL)
 #
-#    Copyright (C) 2014 - 2017 Vivante Corporation
+#    Copyright (C) 2014 - 2018 Vivante Corporation
 #
 #    This program is free software; you can redistribute it and/or
 #    modify it under the terms of the GNU General Public License
@@ -100,6 +100,10 @@ endif
 
 ifneq ($(CONFIG_IOMMU_SUPPORT),)
 OBJS += $(OS_KERNEL_DIR)/gc_hal_kernel_iommu.o
+endif
+
+ifneq ($(CONFIG_DRM),)
+OBJS += $(OS_KERNEL_DIR)/gc_hal_kernel_drm.o
 endif
 
 OBJS += $(HAL_KERNEL_DIR)/gc_hal_kernel.o \
@@ -289,6 +293,12 @@ ifeq ($(SECURITY), 1)
 EXTRA_CFLAGS += -DgcdSECURITY=1
 endif
 
+ifneq ($(CONFIG_DRM), )
+EXTRA_CFLAGS += -DgcdENABLE_DRM=$(VIVANTE_ENABLE_DRM)
+else
+EXTRA_CFLAGS += -DgcdENABLE_DRM=0
+endif
+
 EXTRA_CFLAGS += -I$(AQROOT)/hal/kernel/inc
 EXTRA_CFLAGS += -I$(AQROOT)/hal/kernel
 EXTRA_CFLAGS += -I$(AQROOT)/hal/kernel/arch
@@ -307,7 +317,7 @@ endif
 
 EXTRA_CFLAGS += -DHOST=\"$(HOST)\"
 
-EXTRA_CFLAGS += -DgcdENABLE_TRUST_APPLICATION=0
+EXTRA_CFLAGS += -DgcdENABLE_TRUST_APPLICATION=1
 
 obj-$(CONFIG_MXC_GPU_VIV) = $(MODULE_NAME).o
 
