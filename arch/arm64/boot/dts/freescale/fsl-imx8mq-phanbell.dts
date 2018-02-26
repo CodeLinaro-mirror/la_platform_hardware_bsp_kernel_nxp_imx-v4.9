@@ -107,6 +107,7 @@
 		model = "imx-audio-hdmi";
 		audio-cpu = <&sai4>;
 		protocol = <1>;
+	    status = "disabled";
 	};
 
 	sound-spdif {
@@ -122,6 +123,7 @@
 		model = "imx-hdmi-arc";
 		spdif-controller = <&spdif2>;
 		spdif-in;
+	    status = "disabled";
 	};
 
 	sound-ak4458 {
@@ -726,7 +728,7 @@
     reset-gpio = <&gpio3 10 GPIO_ACTIVE_LOW>;
     ext_osc = <1>;
     hard-wired = <1>;
-	status = "okay";
+	status = "disabled";
 };
 
 &uart1 { /* console */
@@ -893,17 +895,15 @@
 };
 
 &dcss {
-	status = "okay";
-
 	disp-dev = "hdmi_disp";
 };
 
 &hdmi {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi_cec {
-	status = "okay";
+	status = "disabled";
 };
 
 &csi1_bridge {
