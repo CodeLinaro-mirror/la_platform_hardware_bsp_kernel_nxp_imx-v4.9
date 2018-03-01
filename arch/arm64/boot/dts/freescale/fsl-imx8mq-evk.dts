@@ -96,6 +96,7 @@
 		clocks = <&clk IMX8MQ_CLK_SAI2_ROOT>;
 		clock-names = "mclk";
 		wlf,mute-gpios = <&gpio1 8 GPIO_ACTIVE_LOW>;
+		status = "disabled";
 	};
 
 	sound-wm8524 {
@@ -106,6 +107,7 @@
 		audio-routing =
 			"Line Out Jack", "LINEVOUTL",
 			"Line Out Jack", "LINEVOUTR";
+		status = "disabled";
 	};
 
 	sound-hdmi {
@@ -135,6 +137,7 @@
 		model = "ak4458-audio";
 		audio-cpu = <&sai1>;
 		audio-codec = <&ak4458_1>, <&ak4458_2>;
+		status = "disabled";
 	};
 
 	sound-ak5558 {
@@ -142,6 +145,7 @@
 		model = "ak5558-audio";
 		audio-cpu = <&sai5>;
 		audio-codec = <&ak5558>;
+		status = "disabled";
 	};
 
 	sound-ak4497 {
@@ -615,7 +619,7 @@
 	clock-frequency = <100000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_i2c2>;
-	status = "disabled";
+	status = "okay";
 };
 
 &i2c3 {
@@ -628,23 +632,27 @@
 		compatible = "asahi-kasei,ak4458";
 		reg = <0x10>;
 		ak4458,pdn-gpio = <&gpio3 18 GPIO_ACTIVE_HIGH>;
+		status = "disabled";
 	};
 
 	ak4458_2: ak4458@12 {
 		compatible = "asahi-kasei,ak4458";
 		reg = <0x12>;
+		status = "disabled";
 	};
 
 	ak5558: ak5558@13 {
 		compatible = "asahi-kasei,ak5558";
 		reg = <0x13>;
 		ak5558,pdn-gpio = <&gpio3 17 GPIO_ACTIVE_HIGH>;
+		status = "disabled";
 	};
 
 	ak4497: ak4497@11 {
 		compatible = "asahi-kasei,ak4497";
 		reg = <0x11>;
 		ak4497,pdn-gpio = <&gpio3 16 GPIO_ACTIVE_HIGH>;
+		status = "disabled";
 	};
 };
 
