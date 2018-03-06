@@ -11,14 +11,14 @@
 #include <linux/types.h>
 #include <linux/uio_driver.h>
 
-#define DEVICE_NAME "memrt"
+#define DEVICE_NAME "pipelog"
 #define DEVICE_VERSION "1.0"
 
 static DEFINE_SPINLOCK(is_open_lock);
 static bool is_open;  // Initialized to false by kernel.
 
-static const struct of_device_id memrt_match[] = {
-	{ .compatible = "android,memrt", },
+static const struct of_device_id pipelog_match[] = {
+	{ .compatible = "android,pipelog", },
 	{}
 };
 
@@ -48,7 +48,7 @@ static int probe(struct platform_device *platform)
 	struct uio_info *uio = NULL;
 	u64 size = 0;
 
-	match = of_match_device(memrt_match, &platform->dev);
+	match = of_match_device(pipelog_match, &platform->dev);
 	if (!match)
 		return -EINVAL;
 
@@ -67,25 +67,25 @@ static int probe(struct platform_device *platform)
 	uio->mem[0].size = (resource_size_t)size;
 
 	if (!uio->mem[0].addr || uio->mem[0].addr == OF_BAD_ADDR) {
-		pr_err("MemRt failed to map shared memory.\n");
+		pr_err("Pipelog failed to map shared memory.\n");
 		return -ENOMEM;
 	}
 
 	return uio_register_device(&platform->dev, uio);
 }
 
-MODULE_DEVICE_TABLE(of, memrt_match);
+MODULE_DEVICE_TABLE(of, pipelog_match);
 
-static struct platform_driver memrt_driver = {
+static struct platform_driver pipelog_driver = {
 	.probe = probe,
 	.driver = {
 		.name = DEVICE_NAME,
-		.of_match_table = memrt_match,
+		.of_match_table = pipelog_match,
 	},
 };
 
-module_platform_driver(memrt_driver);
+module_platform_driver(pipelog_driver);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Ed Coyne, Google Inc.");
-MODULE_DESCRIPTION("Shared memory serial channel between processors.");
+MODULE_DESCRIPTION("Provide a simple cirular buffer based log between two systems sharing memory.");
