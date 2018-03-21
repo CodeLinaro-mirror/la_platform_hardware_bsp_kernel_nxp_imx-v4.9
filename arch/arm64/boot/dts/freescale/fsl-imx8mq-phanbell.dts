@@ -226,9 +226,9 @@
 
 		pinctrl_pcie1: pcie1grp {
 			fsl,pins = <
-                MX8MQ_IOMUXC_I2C4_SCL_GPIO5_IO20        0x16 /* clk req */
-                MX8MQ_IOMUXC_NAND_DATA05_GPIO3_IO11     0x16 /* Disable - wl_regon */
-                MX8MQ_IOMUXC_NAND_DATA04_GPIO3_IO10     0x16 /* Reset - wl_nreset */
+				MX8MQ_IOMUXC_I2C4_SCL_GPIO5_IO20        0x16 /* clk req */
+				MX8MQ_IOMUXC_NAND_DATA05_GPIO3_IO11     0x16 /* Disable - wl_regon */
+				MX8MQ_IOMUXC_NAND_DATA04_GPIO3_IO10     0x16 /* Reset - wl_nreset */
 			>;
 		};
 
@@ -469,7 +469,7 @@
 		bd71837,pmic-buck3-dvs-voltage = <1000000>, <0>, <0>; /* VDD_GPU: Run */
 		bd71837,pmic-buck4-uses-i2c-dvs;
 		bd71837,pmic-buck4-dvs-voltage = <1000000>, <0>, <0>; /* VDD_VPU: Run */
-		
+
 		gpo {
 			rohm,drv = <0x0C>;	/* 0b0000_1100 all gpos with cmos output mode */
 		};
@@ -533,7 +533,7 @@
 				regulator-boot-on;
 				regulator-always-on;
 			};
-			
+
 			buck7_reg: regulator@6 {
 				reg = <6>;
 				regulator-compatible = "buck7";
@@ -542,7 +542,7 @@
 				regulator-boot-on;
 				regulator-always-on;
 			};
-			
+
 			buck8_reg: regulator@7 {
 				reg = <7>;
 				regulator-compatible = "buck8";
@@ -551,7 +551,6 @@
 				regulator-boot-on;
 				regulator-always-on;
 			};
-			
 
 			ldo1_reg: regulator@8 {
 				reg = <8>;
@@ -702,32 +701,32 @@
 		ak4497,pdn-gpio = <&gpio3 16 GPIO_ACTIVE_HIGH>;
 	};
 
-    typec_ptn5100: ptn5110@50 {
-         compatible = "usb,tcpci";
-         pinctrl-names = "default";
-         pinctrl-0 = <&pinctrl_typec>;
-         reg = <0x50>;
-         interrupt-parent = <&gpio3>;
-         interrupts = <3 8>;
-         ss-sel-gpios = <&gpio3 5 GPIO_ACTIVE_HIGH>;
-         src-pdos = <0x380190c8>;
-         snk-pdos = <0x380190c8 0x3802d0c8>;
-         max-snk-mv = <9000>;
-         max-snk-ma = <1000>;
-         op-snk-mw = <9000>;
-         port-type = "drp";
-         default-role = "sink";
-    };
+	typec_ptn5100: ptn5110@50 {
+		compatible = "usb,tcpci";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_typec>;
+		reg = <0x50>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <3 8>;
+		ss-sel-gpios = <&gpio3 5 GPIO_ACTIVE_HIGH>;
+		src-pdos = <0x380190c8>;
+		snk-pdos = <0x380190c8 0x3802d0c8>;
+		max-snk-mv = <9000>;
+		max-snk-ma = <1000>;
+		op-snk-mw = <9000>;
+		port-type = "drp";
+		default-role = "sink";
+	};
 };
 
 &pcie1{
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_pcie1>;
-    clkreq-gpio = <&gpio5 20 GPIO_ACTIVE_LOW>;
-    disable-gpio = <&gpio3 11 GPIO_ACTIVE_LOW>;
-    reset-gpio = <&gpio3 10 GPIO_ACTIVE_LOW>;
-    ext_osc = <1>;
-    hard-wired = <1>;
+	clkreq-gpio = <&gpio5 20 GPIO_ACTIVE_LOW>;
+	disable-gpio = <&gpio3 11 GPIO_ACTIVE_LOW>;
+	reset-gpio = <&gpio3 10 GPIO_ACTIVE_LOW>;
+	ext_osc = <1>;
+	hard-wired = <1>;
 	status = "disabled";
 };
 
