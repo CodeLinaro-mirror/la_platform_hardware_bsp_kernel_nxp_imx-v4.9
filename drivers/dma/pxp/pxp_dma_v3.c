@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2010-2016 Freescale Semiconductor, Inc.
  *
- * Copyright 2017 NXP
+ * Copyright 2017-2018 NXP
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -3395,6 +3395,7 @@ static void __pxpdma_dostart(struct pxp_channel *pxp_chan)
 			input->crop.y = proc_data->srect.top;
 			input->crop.width  = proc_data->srect.width;
 			input->crop.height = proc_data->srect.height;
+			input->rotate = proc_data->rotate;
 			alpha->s0_alpha = param->alpha;
 
 			param = &pxp->pxp_conf_state.ol_param[0];
@@ -3405,7 +3406,6 @@ static void __pxpdma_dostart(struct pxp_channel *pxp_chan)
 			alpha->s1_alpha = param->alpha;
 
 			alpha->alpha_mode = proc_data->alpha_mode;
-			input->rotate = proc_data->rotate;
 			input->flip   = (proc_data->hflip) ? PXP_H_FLIP :
 					(proc_data->vflip) ? PXP_V_FLIP : 0;
 			break;
