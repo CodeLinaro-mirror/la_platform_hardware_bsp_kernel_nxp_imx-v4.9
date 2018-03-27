@@ -10540,17 +10540,6 @@ exit:
 }
 #endif /* WLADPS || WLADPS_PRIVATE_CMD */
 
-	/* Usage: passing 'bcmdhd.wl_country_para=$CUSTOMIZED_COUNTRY bcmdhd.wl_country_rev=$CUSTOMIZED_REV'
-	 * from kernel command line */
-	static char wl_country_para[WLC_CNTRY_BUF_SZ] = {'U', 'S'};
-	static int  wl_country_rev = 140;
-
-	module_param_string(wl_country_para, wl_country_para, sizeof(wl_country_para), 0644);
-	MODULE_PARM_DESC(wl_country_para,"String of country_para:VALUE for country code.");
-
-	module_param(wl_country_rev, int, 0644);
-	MODULE_PARM_DESC(wl_country_rev,"String of country_para:VALUE for country code rev.");
-
 int
 dhd_preinit_ioctls(dhd_pub_t *dhd)
 {
@@ -10996,9 +10985,6 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 		dhd->info->rxthread_enabled = TRUE;
 #endif
 	/* Set Country code  */
-	strcpy(dhd->conf->cspec.ccode, wl_country_para);
-	dhd->conf->cspec.rev = wl_country_rev;
-
 	if (dhd->dhd_cspec.ccode[0] != 0) {
 		printf("Set country %s, revision %d\n", dhd->dhd_cspec.ccode, dhd->dhd_cspec.rev);
 		ret = dhd_iovar(dhd, 0, "country", (char *)&dhd->dhd_cspec, sizeof(wl_country_t),

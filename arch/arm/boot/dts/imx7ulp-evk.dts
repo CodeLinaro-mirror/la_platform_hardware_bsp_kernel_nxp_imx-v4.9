@@ -16,6 +16,11 @@
 	model = "NXP i.MX7ULP EVK";
 	compatible = "fsl,imx7ulp-evk", "fsl,imx7ulp", "Generic DT based system";
 
+	aliases {
+		gpio4 = &rpmsg_gpio0;
+		gpio5 = &rpmsg_gpio1;
+	};
+
 	chosen {
 		bootargs = "console=ttyLP0,115200 earlycon=lpuart32,0x402D0000,115200";
 		stdout-path = &lpuart4;
@@ -24,8 +29,8 @@
 	bcmdhd_wlan_0: bcmdhd_wlan@0 {
 		compatible = "android,bcmdhd_wlan";
 		wlreg_on-supply = <&wlreg_on>;
-		bcmdhd_fw = "/system/etc/firmware/bcm/1DX_BCM4343W/fw_bcmdhd.bin";
-		bcmdhd_nv = "/system/etc/firmware/bcm/1DX_BCM4343W/bcmdhd.1DX.SDIO.cal";
+		bcmdhd_fw = "/vendor/firmware/bcm/1DX_BCM4343W/fw_bcmdhd.bin";
+		bcmdhd_nv = "/vendor/firmware/bcm/1DX_BCM4343W/bcmdhd.1DX.SDIO.cal";
 	};
 
 	memory {
@@ -170,6 +175,22 @@
 		status = "okay";
 	};
 
+	rpmsg_gpio0: rpmsg-gpio0 {
+		compatible = "fsl,imx-rpmsg-gpio";
+		port_idx = <0>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		status = "okay";
+	};
+
+	rpmsg_gpio1: rpmsg-gpio1 {
+		compatible = "fsl,imx-rpmsg-gpio";
+		port_idx = <1>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		status = "okay";
+	};
+
 	rpmsg_keys: rpmsg-keys {
 		compatible = "fsl,rpmsg-keys";
 
@@ -200,6 +221,17 @@
 
 &cpu0 {
 	arm-supply= <&sw1_reg>;
+};
+
+&rsvd_mem {
+	ramoops@0x9bf00000 {
+		compatible = "ramoops";
+		reg = <0x9bf00000 0x00100000>;
+		record-size	= <0x00020000>;
+		console-size	= <0x00020000>;
+		ftrace-size	= <0x00020000>;
+		pmsg-size	= <0x00020000>;
+	};
 };
 
 &iomuxc1 {
@@ -400,6 +432,7 @@
 		reg = <0x38>;
 		interrupt-parent = <&gpio3>;
 		interrupts = <0 0x02>;
+		focaltech,panel-type = <FT5426>;
 		focaltech,reset-gpio = <&gpio3 1 0x01>;
 		focaltech,irq-gpio = <&gpio3 0 0x02>;
 		focaltech,max-touch-number = <5>;
@@ -410,7 +443,7 @@
 		focaltech,keys = <139 102 158>;
 		focaltech,key-y-coord = <2000>;
 		focaltech,key-x-coords = <200 600 800>;
-		focaltech,swap-xy;
+		focaltech,scaling-down-half;
 	};
 };
 
@@ -494,15 +527,11 @@
 &rpmsg{
 	/*
 	 * 64K for one rpmsg instance, default using 2 rpmsg instances:
-	 * --0x9FF00000~0x9FF0FFFF: pingpong
-	 * --0x9FF10000~0x9FF1FFFF: pmic
-	 * --0x9FF20000~0x9FF2FFFF: pm
-	 * --0x9FF30000~0x9FF3FFFF: audio
-	 * --0x9FF40000~0x9FF4FFFF: virtual tty
-	 * --0x9FF50000~0x9FF5FFFF: keys
+	 * --0x9FF00000~0x9FF0FFFF: pmic,pm,audio,keys,gpio
+	 * --0x9FF10000~0x9FF1FFFF: pingpong,virtual tty
 	 */
-	vdev-nums = <6>;
-	reg = <0x9FF00000 0x60000>;
+	vdev-nums = <2>;
+	reg = <0x9FF00000 0x20000>;
 	status = "okay";
 };
 

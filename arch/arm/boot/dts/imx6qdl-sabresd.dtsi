@@ -1,6 +1,7 @@
 /*
  * Copyright 2012-2016 Freescale Semiconductor, Inc.
  * Copyright 2011 Linaro Ltd.
+ * Copyright 2017 NXP.
  *
  * The code contained herein is licensed under the GNU General Public
  * License. You may obtain a copy of the GNU General Public License
@@ -48,6 +49,21 @@
 
 	memory: memory {
 		reg = <0x10000000 0x40000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		ramoops@0x3ff00000 {
+			compatible = "ramoops";
+			reg = <0x3ff00000 0x00100000>;
+			record-size	= <0x00020000>;
+			console-size	= <0x00020000>;
+			ftrace-size	= <0x00020000>;
+			pmsg-size	= <0x00020000>;
+		};
 	};
 
 	regulators {
@@ -293,6 +309,7 @@
 		status = "okay";
 	};
 
+
 	bt_rfkill {
 		compatible = "fsl,mxc_bt_rfkill";
 		bt-power-gpios = <&gpio1 2 0>;
@@ -503,6 +520,7 @@
 			sw4_reg: sw4 {
 				regulator-min-microvolt = <800000>;
 				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
 			};
 
 			swbst_reg: swbst {
@@ -1016,7 +1034,7 @@
 	assigned-clock-parents = <&clks IMX6QDL_CLK_OSC>,
 				 <&clks IMX6QDL_CLK_PLL4>,
 				 <&clks IMX6QDL_CLK_PLL4_AUDIO_DIV>;
-	assigned-clock-rates = <1179648000>, <0>, <0>;
+	assigned-clock-rates = <737280000>, <0>, <0>;
 	status = "okay";
 };
 
@@ -1103,4 +1121,8 @@
 	pinctrl-0 = <&pinctrl_wdog>;
 	fsl,ext-reset-output;
 	status = "okay";
+};
+
+&crypto {
+	status = "disabled";
 };

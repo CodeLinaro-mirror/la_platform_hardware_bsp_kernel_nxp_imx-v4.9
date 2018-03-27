@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2017 Vivante Corporation
+*    Copyright (c) 2014 - 2018 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2017 Vivante Corporation
+*    Copyright (C) 2014 - 2018 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -577,6 +577,13 @@ gcoHAL_SetBltNP2Texture(
     );
 
 gceSTATUS
+gcoHAL_ExportVideoMemory(
+    IN gctUINT32 Handle,
+    IN gctUINT32 Flags,
+    OUT gctINT32 * FD
+    );
+
+gceSTATUS
 gcoHAL_NameVideoMemory(
     IN gctUINT32 Handle,
     OUT gctUINT32 * Name
@@ -1068,6 +1075,14 @@ gcoHAL_ScheduleSignal(
     IN gctSIGNAL AuxSignal,
     IN gctINT ProcessID,
     IN gceKERNEL_WHERE FromWhere
+    );
+
+gceSTATUS
+gcoHAL_GetGraphicBufferFd(
+    IN gctUINT32 Node[3],
+    IN gctSHBUF ShBuf,
+    IN gctSIGNAL Signal,
+    OUT gctINT32 * Fd
     );
 
 /******************************************************************************\
@@ -4077,7 +4092,8 @@ gckOS_DebugFlush(
 **
 **      ...         Optional arguments.
 */
-#if gcdDUMP
+
+#if gcdDUMP || gcdDUMP_2DVG
     gceSTATUS
     gcfDump(
         IN gcoOS Os,
@@ -4165,7 +4181,7 @@ gckOS_DebugFlush(
 **          Number of bytes.
 */
 
-#if gcdDUMP || gcdDUMP_COMMAND
+#if gcdDUMP || gcdDUMP_COMMAND || gcdDUMP_2DVG
 gceSTATUS
 gcfDumpBuffer(
     IN gcoOS Os,

@@ -980,7 +980,7 @@ int intel_sprite_set_colorkey(struct drm_device *dev, void *data,
 	    set->flags & I915_SET_COLORKEY_DESTINATION)
 		return -EINVAL;
 
-	plane = drm_plane_find(dev, set->plane_id);
+	plane = drm_plane_find(dev, file_priv, set->plane_id);
 	if (!plane || plane->type != DRM_PLANE_TYPE_OVERLAY)
 		return -ENOENT;
 
@@ -1153,13 +1153,13 @@ intel_plane_init(struct drm_device *dev, enum pipe pipe, int plane)
 		ret = drm_universal_plane_init(dev, &intel_plane->base, possible_crtcs,
 					       &intel_plane_funcs,
 					       plane_formats, num_plane_formats,
-					       DRM_PLANE_TYPE_OVERLAY,
+					       NULL, DRM_PLANE_TYPE_OVERLAY,
 					       "plane %d%c", plane + 2, pipe_name(pipe));
 	else
 		ret = drm_universal_plane_init(dev, &intel_plane->base, possible_crtcs,
 					       &intel_plane_funcs,
 					       plane_formats, num_plane_formats,
-					       DRM_PLANE_TYPE_OVERLAY,
+					       NULL, DRM_PLANE_TYPE_OVERLAY,
 					       "sprite %c", sprite_name(pipe, plane));
 	if (ret)
 		goto fail;

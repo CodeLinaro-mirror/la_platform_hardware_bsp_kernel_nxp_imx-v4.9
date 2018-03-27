@@ -1,6 +1,7 @@
 /*
  * Copyright 2012-2015 Freescale Semiconductor, Inc.
  * Copyright 2011 Linaro Ltd.
+ * Copyright 2017 NXP.
  *
  * The code contained herein is licensed under the GNU General Public
  * License. You may obtain a copy of the GNU General Public License
@@ -61,6 +62,21 @@
 
 	memory:	memory {
 		reg = <0x10000000 0x80000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		ramoops@0x7ff00000 {
+			compatible = "ramoops";
+			reg = <0x7ff00000 0x00100000>;
+			record-size	= <0x00020000>;
+			console-size	= <0x00020000>;
+			ftrace-size	= <0x00020000>;
+			pmsg-size	= <0x00020000>;
+		};
 	};
 
 	leds {
@@ -490,6 +506,7 @@
 			sw4_reg: sw4 {
 				regulator-min-microvolt = <800000>;
 				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
 			};
 
 			swbst_reg: swbst {
