@@ -1,5 +1,7 @@
 menu "Android"
 
+source "drivers/android/things/Kconfig"
+
 config ANDROID
 	bool "Android Drivers"
 	---help---

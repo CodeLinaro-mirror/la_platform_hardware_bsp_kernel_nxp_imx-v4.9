@@ -1,0 +1,6 @@
+config ANDROIDTHINGS_REALTIME
+	bool "Build drivers for realtime subsystem of Android Things."
+	select UIO
+	help
+	 Say Yes here to build shared memory based drivers to communicate
+	 between Realtime process and Android.
