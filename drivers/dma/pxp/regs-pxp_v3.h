@@ -1,7 +1,8 @@
 /*
  * Freescale PXP Register Definitions
  *
- * Copyright 2014-2015 Freescale Semiconductor, Inc. All Rights Reserved.
+ * Copyright 2014-2016 Freescale Semiconductor, Inc. All Rights Reserved.
+ * Copyright 2017-2018 NXP
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -455,6 +456,8 @@
 #define BM_PXP_PS_SCALE_XSCALE 0x00007FFF
 #define BF_PXP_PS_SCALE_XSCALE(v)  \
         (((v) << 0) & BM_PXP_PS_SCALE_XSCALE)
+
+#define BP_PXP_PS_SCALE_OFFSET 12
 
 #define HW_PXP_PS_OFFSET	(0x00000120)
 

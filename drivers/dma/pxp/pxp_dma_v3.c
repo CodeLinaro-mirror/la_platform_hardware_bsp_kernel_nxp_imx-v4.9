@@ -2123,6 +2123,17 @@ static uint32_t ps_calc_scaling(struct pxp_pixmap *input,
 		}
 		scale.xscale = input->crop.width * 0x1000 /
 				(output->crop.width * decx);
+
+		/* A factor greater than 2 is not supported
+		 * with the bilinear filter, so correct it in
+		 * driver
+		 */
+		if (((scale.xscale >> BP_PXP_PS_SCALE_OFFSET) & 0x3) > 2) {
+			scale.xscale &= (~(0x3 << BP_PXP_PS_SCALE_OFFSET));
+			scale.xscale |= (0x2 << BP_PXP_PS_SCALE_OFFSET);
+			pr_warn("%s not support scale width: %d\n",
+							__func__, output->crop.width);
+		}
 	} else {
 		if (!is_yuv(input->format) ||
 		    (is_yuv(input->format) == is_yuv(output->format)) ||
@@ -2160,6 +2171,17 @@ static uint32_t ps_calc_scaling(struct pxp_pixmap *input,
 		}
 		scale.yscale = input->crop.height * 0x1000 /
 				(output->crop.height * decy);
+
+		/* A factor greater than 2 is not supported
+		 * with the bilinear filter, so correct it in
+		 * driver
+		 */
+		if (((scale.yscale >> BP_PXP_PS_SCALE_OFFSET) & 0x3) > 2) {
+			scale.yscale &= (~(0x3 << BP_PXP_PS_SCALE_OFFSET));
+			scale.yscale |= (0x2 << BP_PXP_PS_SCALE_OFFSET);
+			pr_warn("%s not support scale height: %d\n",
+							__func__, output->crop.height);
+		}
 	} else {
 		if ((input->crop.height > 1) && (output->crop.height > 1))
 			scale.yscale = (input->crop.height - 1) * 0x1000 /
