@@ -42,6 +42,77 @@
 / {
 	model = "Freescale i.MX8MQ Wibo";
 	compatible = "fsl,imx8mq-wibo", "fsl,imx8mq";
+
+	sound: sound {
+		compatible = "fsl,imx7d-evk-wm8960",
+				"fsl,imx-audio-wm8960";
+	model = "wm8960-audio";
+	cpu-dai = <&sai2>;
+	audio-codec = <&wm8960>;
+	codec-master;
+	/*
+	 * hp-det = <hp-det-pin hp-det-polarity>;
+	 * hp-det-pin: JD1 JD2  or JD3
+	 * hp-det-polarity = 0: hp detect high for headphone
+	 * hp-det-polarity = 1: hp detect high for speaker
+	 */
+	hp-det = <2 0>;
+	audio-routing =
+		"Headphone Jack", "HP_L",
+		"Headphone Jack", "HP_R",
+		"Ext Spk", "SPK_LP",
+		"Ext Spk", "SPK_LN",
+		"Ext Spk", "SPK_RP",
+		"Ext Spk", "SPK_RN",
+		"LINPUT2", "Mic Jack",
+		"LINPUT3", "Mic Jack",
+		"RINPUT1", "Main MIC",
+		"RINPUT2", "Main MIC",
+		"Mic Jack", "MICB",
+		"Main MIC", "MICB",
+		"Playback", "CPU-Playback",
+		"CPU-Capture", "Capture";
+	};
+};
+
+&i2c2 {
+  status = "okay";
+
+	wm8960: wm8960@1a {
+		compatible = "wlf,wm8960";
+		reg = <0x1a>;
+		status = "okay";
+		clocks = <&clk IMX8MQ_CLK_SAI2_ROOT>;
+		clock-names = "mclk";
+		wlf,shared-lrclk;
+	};
+};
+
+&sai2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_sai2>;
+	assigned-clocks = <&clk IMX8MQ_CLK_SAI2_SRC>,
+			<&clk IMX8MQ_CLK_SAI2_DIV>;
+	assigned-clock-parents = <&clk IMX8MQ_AUDIO_PLL1_OUT>;
+	assigned-clock-rates = <0>, <24576000>;
+	status = "okay";
+};
+
+&iomuxc {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_hog>;
+
+	imx8mq-evk {
+		pinctrl_sai2: sai2grp {
+			fsl,pins = <
+				MX8MQ_IOMUXC_SAI2_TXFS_SAI2_TX_SYNC	0xd6
+				MX8MQ_IOMUXC_SAI2_TXC_SAI2_TX_BCLK	0xd6
+				MX8MQ_IOMUXC_SAI2_MCLK_SAI2_MCLK	0xd6
+				MX8MQ_IOMUXC_SAI2_TXD0_SAI2_TX_DATA0	0xd6
+				MX8MQ_IOMUXC_SAI2_RXD0_SAI2_RX_DATA0	0xd6
+			>;
+		};
+	};
 };
 
 &hdmi {
