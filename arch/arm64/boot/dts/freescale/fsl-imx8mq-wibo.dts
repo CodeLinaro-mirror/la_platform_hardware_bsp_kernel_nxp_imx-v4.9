@@ -112,6 +112,21 @@
 				MX8MQ_IOMUXC_SAI2_RXD0_SAI2_RX_DATA0	0xd6
 			>;
 		};
+		pinctrl_pcie0_wibo: pcie0grp_wibo {
+			fsl,pins = <
+				MX8MQ_IOMUXC_NAND_CE3_B_GPIO3_IO4       0x16 /* Disable - wl_regon */
+				MX8MQ_IOMUXC_NAND_CE1_B_GPIO3_IO2       0x16 /* Reset */
+				MX8MQ_IOMUXC_NAND_DATA00_GPIO3_IO6      0x19
+			>;
+		};
+		pinctrl_pcie1_wibo: pcie1grp_wibo{
+			fsl,pins = <
+				MX8MQ_IOMUXC_I2C4_SDA_GPIO5_IO21	0x16 /* PCIE2_nCLKREQ */
+				MX8MQ_IOMUXC_ECSPI2_MOSI_GPIO5_IO11	0x16 /* PCIe_nWAKE */
+				MX8MQ_IOMUXC_ECSPI2_MISO_GPIO5_IO12	0x16 /* PCIe_nRST */
+				MX8MQ_IOMUXC_ECSPI2_SCLK_GPIO5_IO10	0x16
+			>;
+		};
 	};
 };
 
@@ -123,11 +138,25 @@
 	status = "okay";
 };
 
-&pcie1{
-	status = "disabled";
-};
-
 &dcss {
 	disp-dev = "hdmi_disp";
+	status = "okay";
+};
+
+&pcie0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_pcie0_wibo>;
+	disable-gpio = <&gpio3 4 GPIO_ACTIVE_LOW>;
+	reset-gpio = <&gpio3 2 GPIO_ACTIVE_LOW>;
+	status = "okay";
+};
+
+&pcie1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_pcie1_wibo>;
+	clkreq-gpio = <&gpio5 21 GPIO_ACTIVE_LOW>;
+	power-on-gpio = <&gpio5 10 GPIO_ACTIVE_HIGH>;
+	reset-gpio = <&gpio5 12 GPIO_ACTIVE_LOW>;
+	ext_osc = <1>;
 	status = "okay";
 };
