@@ -98,7 +98,41 @@
 	status = "okay";
 };
 
+&pwm1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_pwm1>;
+	status = "okay";
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart2>;
+	assigned-clocks = <&clk IMX8MQ_CLK_UART2_SRC>;
+	assigned-clock-parents = <&clk IMX8MQ_CLK_25M>;
+	status = "okay";
+};
+
+&ecspi2 {
+	fsl,spi-num-chipselects = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_ecspi2 &pinctrl_ecspi2_cs>;
+	cs-gpios = <&gpio5 13 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+
+	spidev@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "rohm,dh2228fv";
+		spi-max-frequency = <20000000>;
+		reg = <0>;
+		status = "okay";
+	};
+};
+
 &iomuxc {
+	pinctrl-names = "default";
+	pinctrl-1 = <&pinctrl_gpio>;
+
 	imx8mq-wibo {
 		pinctrl_sai2: sai2grp {
 			fsl,pins = <
@@ -125,6 +159,42 @@
 				MX8MQ_IOMUXC_ECSPI2_MISO_GPIO5_IO12	0x16 /* PCIe_nRST */
 				MX8MQ_IOMUXC_ECSPI2_SCLK_GPIO5_IO10	0x16
 				MX8MQ_IOMUXC_NAND_WP_B_GPIO3_IO18	0x19 /* APEX_SYS_RST_L */
+			>;
+		};
+		pinctrl_gpio: gpio_ctrlgrp {
+			fsl,pins = <
+				MX8MQ_IOMUXC_ECSPI1_SCLK_GPIO5_IO6		0x19
+				MX8MQ_IOMUXC_ECSPI1_MOSI_GPIO5_IO7		0x19
+				MX8MQ_IOMUXC_NAND_DATA06_GPIO3_IO12		0x19
+				MX8MQ_IOMUXC_NAND_DATA07_GPIO3_IO13		0x19
+				MX8MQ_IOMUXC_NAND_DQS_GPIO3_IO14		0x19
+				MX8MQ_IOMUXC_NAND_RE_B_GPIO3_IO15		0x19
+				MX8MQ_IOMUXC_SD2_WP_GPIO2_IO20			0x19
+			>;
+		};
+		pinctrl_pwm1: pwm1 {
+			fsl,pins = <
+				MX8MQ_IOMUXC_GPIO1_IO01_PWM1_OUT	0x7f
+			>;
+		};
+		pinctrl_uart2: uart2grp {
+			fsl,pins = <
+				MX8MQ_IOMUXC_UART2_RXD_UART2_DCE_RX	0x49
+				MX8MQ_IOMUXC_UART2_TXD_UART2_DCE_TX	0x49
+				MX8MQ_IOMUXC_UART4_RXD_UART2_DCE_CTS_B	0x49
+				MX8MQ_IOMUXC_UART4_TXD_UART2_DCE_RTS_B	0x49
+			>;
+		};
+		pinctrl_ecspi2: ecspi2grp {
+			fsl,pins = <
+				MX8MQ_IOMUXC_ECSPI2_SCLK_ECSPI2_SCLK	0x82
+				MX8MQ_IOMUXC_ECSPI2_MOSI_ECSPI2_MOSI	0x82
+				MX8MQ_IOMUXC_ECSPI2_MISO_ECSPI2_MISO	0x82
+			>;
+		};
+		pinctrl_ecspi2_cs: ecspi2_cs_grp {
+			fsl,pins = <
+				MX8MQ_IOMUXC_ECSPI2_SS0_GPIO5_IO13	0x82
 			>;
 		};
 	};
