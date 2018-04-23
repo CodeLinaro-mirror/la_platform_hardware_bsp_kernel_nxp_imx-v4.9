@@ -103,6 +103,25 @@
 			"Headphone Jack", "HPOR";
 	};
 };
+&iomuxc {
+	imx8mq-phanbell {
+		pinctrl_typec_phanbell: typecgrp {
+			fsl,pins = <
+				MX8MQ_IOMUXC_NAND_ALE_GPIO3_IO0		0x17059
+			>;
+		};
+	};
+};
+
+&i2c3 {
+       typec_ptn5150: typec@3d {
+               compatible = "nxp,ptn5150";
+               pinctrl-names = "default";
+               pinctrl-0 = <&pinctrl_typec_phanbell>;
+               reg = <0x3d>;
+               connect-gpios = <&gpio3 0 GPIO_ACTIVE_HIGH>;
+        };
+};
 
 &iomuxc {
 	imx8mq-phanbell {
@@ -306,4 +325,10 @@
 			>;
 		};
 	};
+};
+
+&usb_dwc3_0 {
+	status = "okay";
+	extcon = <&typec_ptn5150>;
+	dr_mode = "otg";
 };

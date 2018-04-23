@@ -232,3 +232,8 @@
 	hard-wired = <1>;
 	status = "disabled";
 };
+
+&usb_dwc3_0 {
+	status = "okay";
+	dr_mode = "peripheral";
+};
