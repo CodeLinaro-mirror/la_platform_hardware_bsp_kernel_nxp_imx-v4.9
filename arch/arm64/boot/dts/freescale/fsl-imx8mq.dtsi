@@ -44,6 +44,8 @@
 		gpio4 = &gpio5;
 		dsi_phy0 = &mipi_dsi_phy;
 		mipi_dsi0 = &mipi_dsi;
+		spi0 = &ecspi1;
+		spi1 = &ecspi2;
 	};
 
 	cpus {
@@ -773,6 +775,19 @@
 		interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&clk IMX8MQ_CLK_ECSPI1_ROOT>,
 			 <&clk IMX8MQ_CLK_ECSPI1_ROOT>;
+		clock-names = "ipg", "per";
+		interrupt-parent = <&gpc>;
+		status = "disabled";
+	};
+
+	ecspi2: ecspi@30830000 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "fsl,imx6ul-ecspi", "fsl,imx51-ecspi";
+		reg = <0x0 0x30830000 0x0 0x10000>;
+		interrupts = <GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&clk IMX8MQ_CLK_ECSPI2_ROOT>,
+			 <&clk IMX8MQ_CLK_ECSPI2_ROOT>;
 		clock-names = "ipg", "per";
 		interrupt-parent = <&gpc>;
 		status = "disabled";
