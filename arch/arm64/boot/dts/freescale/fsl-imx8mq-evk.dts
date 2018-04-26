@@ -96,7 +96,7 @@
 		clocks = <&clk IMX8MQ_CLK_SAI2_ROOT>;
 		clock-names = "mclk";
 		wlf,mute-gpios = <&gpio1 8 GPIO_ACTIVE_LOW>;
-		status = "disabled";
+		status = "okay";
 	};
 
 	sound-wm8524 {
@@ -107,7 +107,7 @@
 		audio-routing =
 			"Line Out Jack", "LINEVOUTL",
 			"Line Out Jack", "LINEVOUTR";
-		status = "disabled";
+		status = "okay";
 	};
 
 	sound-hdmi {
