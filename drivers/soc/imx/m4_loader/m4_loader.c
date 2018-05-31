@@ -44,9 +44,9 @@ void imx_m4_reset_platform(void)
 
 	/* Wait for the SRC_M4RCR[2] to be cleared by other processor */
 	while ((ioread32(m4rcr) & (1 << 2)) != 0) {
-		msleep(10);
+		mdelay(10);
 		millis_slept += 10;
-		if (millis_slept > 2000) {
+		if (millis_slept > 1000) {
 			pr_err("Timeout waiting for m4 to clear "
 			       " SRC_M4RCR[2].\n");
 			iounmap(m4rcr);
