@@ -1,3 +1,4 @@
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/ioport.h>
 #include <linux/of.h>
@@ -21,6 +22,14 @@ static uint32_t m4_data_size;
 void imx_m4_boot(void)
 {
 	void __iomem *m4rcr = ioremap_nocache(SRC_M4RCR, 4);
+	struct clk *m4_clk = clk_get(NULL, "arm_m4_root_clk");
+
+	if (IS_ERR(m4_clk)) {
+		pr_err("Failed to get m4 clock! err:%ld \n", PTR_ERR(m4_clk));
+		return;
+	}
+
+	clk_prepare_enable(m4_clk);
 
 	iowrite32((ioread32(m4rcr) & ~(SRC_M4RCR_M4C_NON_SCLR_RST_MASK)) |
 		  SRC_M4RCR_ENABLE_M4_MASK, m4rcr);

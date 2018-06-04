@@ -11,6 +11,7 @@
  */
 
 #include <linux/clk-provider.h>
+#include <linux/clkdev.h>
 #include <linux/imx_sema4.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -192,8 +193,11 @@ struct clk *clk_register_gate2(struct device *dev, const char *name,
 	gate->hw.init = &init;
 
 	clk = clk_register(dev, &gate->hw);
-	if (IS_ERR(clk))
+	if (IS_ERR(clk)) {
 		kfree(gate);
-
+        } else {
+		// Register clock for later lookup with clk_get().
+		clk_register_clkdev(clk, name, NULL);
+	}
 	return clk;
 }
