@@ -324,6 +324,13 @@
 				/* vsync pin mux? can't find in schematic */
 			>;
 		};
+
+		pinctrl_uart3: uart3grp {
+			fsl,pins = <
+				MX8MQ_IOMUXC_UART3_RXD_UART3_DCE_RX		0x49
+				MX8MQ_IOMUXC_UART3_TXD_UART3_DCE_TX		0x49
+			>;
+		};
 	};
 };
 
@@ -331,4 +338,10 @@
 	status = "okay";
 	extcon = <&typec_ptn5150>;
 	dr_mode = "otg";
+};
+
+&uart3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart3>;
+	status = "okay";
 };
