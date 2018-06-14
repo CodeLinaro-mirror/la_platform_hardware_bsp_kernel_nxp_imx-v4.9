@@ -1,0 +1,8 @@
+This directory contains the Gasket thin driver framework and the drivers
+that use it.
+
+Current leaf drivers are: Apex.
+
+Files are prefixed based on their driver:
+	-gasket_* files are Gasket framework files.
+	-apex_* files are Apex driver files.
