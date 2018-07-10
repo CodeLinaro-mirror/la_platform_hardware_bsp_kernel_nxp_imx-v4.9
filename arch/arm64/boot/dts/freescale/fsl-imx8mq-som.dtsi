@@ -501,13 +501,17 @@
 	status = "okay";
 };
 
+&rpmsg_reserved {
+       reg = <0 0x40000000 0 0x100000>;
+};
+
 &rpmsg{
 	/*
 	 * 64K for one rpmsg instance:
-	 * --0xb8000000~0xb800ffff: pingpong
+	 * --0x40000000~0x4000ffff: pingpong
 	 */
 	vdev-nums = <1>;
-	reg = <0x0 0xb8000000 0x0 0x10000>;
+	reg = <0x0 0x40000000 0x0 0x10000>;
 	status = "okay";
 };
 
