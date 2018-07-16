@@ -70,6 +70,9 @@ config HAVE_IMX_DDRC
 config HAVE_IMX_MU
 	bool
 
+config HAVE_IMX_M4
+	bool
+
 config HAVE_IMX_RPMSG
 	select RPMSG_VIRTIO
 	bool
@@ -575,6 +578,7 @@ config SOC_IMX7
 	select ARM_GIC
 	select HAVE_IMX_MU
 	select HAVE_IMX_RPMSG
+	select HAVE_IMX_M4
 	select RPMSG
 
 config SOC_IMX7D
