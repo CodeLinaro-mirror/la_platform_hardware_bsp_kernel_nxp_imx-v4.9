@@ -257,9 +257,9 @@
 		gpio_intr = <&gpio1 3 GPIO_ACTIVE_LOW>;
 
 		bd71837,pmic-buck1-uses-i2c-dvs;
-		bd71837,pmic-buck1-dvs-voltage = <900000>, <850000>, <800000>; /* VDD_SOC: Run-Idle-Suspend */
+		bd71837,pmic-buck1-dvs-voltage = <850000>, <850000>, <800000>; /* VDD_SOC: Run-Idle-Suspend */
 		bd71837,pmic-buck2-uses-i2c-dvs;
-		bd71837,pmic-buck2-dvs-voltage = <1000000>, <900000>, <0>; /* VDD_ARM: Run-Idle */
+		bd71837,pmic-buck2-dvs-voltage = <1000000>, <850000>, <0>; /* VDD_ARM: Run-Idle */
 		bd71837,pmic-buck3-uses-i2c-dvs;
 		bd71837,pmic-buck3-dvs-voltage = <850000>, <0>, <0>; /* VDD_GPU: Run */
 		bd71837,pmic-buck4-uses-i2c-dvs;
@@ -286,7 +286,7 @@
 			buck2_reg: regulator@1 {
 				reg = <1>;
 				regulator-compatible = "buck2";
-				regulator-min-microvolt = <900000>;
+				regulator-min-microvolt = <850000>;
 				regulator-max-microvolt = <1000000>;
 				regulator-boot-on;
 				regulator-always-on;
@@ -516,8 +516,8 @@
 		/* kHz    uV */
 		1500000 1000000
 		1300000 1000000
-		1000000 900000
-		800000  900000
+		1000000 850000
+		800000  850000
 	>;
 	dc-supply = <&buck2_reg>;
 };
