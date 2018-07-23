@@ -323,6 +323,7 @@ static void pcie_aspm_check_latency(struct pci_dev *endpoint)
 		if ((link->aspm_capable & ASPM_STATE_L0S_DW) &&
 		    (link->latency_dw.l0s > acceptable->l0s))
 			link->aspm_capable &= ~ASPM_STATE_L0S_DW;
+#if !defined(CONFIG_ARCH_FSL_IMX8MQ) || !defined (CONFIG_PCIEASPM_POWERSAVE)
 		/*
 		 * Check L1 latency.
 		 * Every switch on the path to root complex need 1
@@ -333,6 +334,7 @@ static void pcie_aspm_check_latency(struct pci_dev *endpoint)
 		    (latency + l1_switch_latency > acceptable->l1))
 			link->aspm_capable &= ~ASPM_STATE_L1;
 		l1_switch_latency += 1000;
+#endif
 
 		link = link->parent;
 	}
