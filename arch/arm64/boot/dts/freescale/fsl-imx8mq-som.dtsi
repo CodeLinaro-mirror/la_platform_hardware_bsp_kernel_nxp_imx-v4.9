@@ -537,7 +537,3 @@
 &pcie0 {
 	fsl,max-link-speed = <1>;
 };
-
-&pcie1 {
-	fsl,max-link-speed = <1>;
-};
