@@ -1,17 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Gasket common interrupt module. Defines functions for enabling
  * eventfd-triggered interrupts between a Gasket device and a host process.
  *
- * Copyright (C) 2017 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2018 Google, Inc.
  */
 #ifndef __GASKET_INTERRUPT_H__
 #define __GASKET_INTERRUPT_H__
@@ -110,44 +102,9 @@ int gasket_interrupt_clear_eventfd(
 	struct gasket_interrupt_data *interrupt_data, int interrupt);
 
 /*
- * Signals the eventfd associated with interrupt.
- * @data: Pointer to device interrupt data.
- * @interrupt: The device interrupt to signal for.
- *
- * Simulates a device interrupt by signaling the eventfd associated with
- * interrupt, if any.
- * Returns 0 if the eventfd was successfully triggered, a negative error code
- * otherwise (if, for example, no eventfd was associated with interrupt).
- */
-int gasket_interrupt_trigger_eventfd(
-	struct gasket_interrupt_data *interrupt_data, int interrupt);
-
-/*
  * The below functions exist for backwards compatibility.
  * No new uses should be written.
  */
-/*
- * Retrieve a pointer to data's MSI-X
- * entries.
- * @data: The interrupt data from which to extract.
- *
- * Returns the internal pointer to data's MSI-X entries.
- */
-struct msix_entry *gasket_interrupt_get_msix_entries(
-	struct gasket_interrupt_data *interrupt_data);
-
-/*
- * Get a pointer to data's eventfd contexts.
- * @data: The interrupt data from which to extract.
- *
- * Returns the internal pointer to data's eventfd contexts.
- *
- * This function exists for backwards compatibility with older drivers.
- * No new uses should be written.
- */
-struct eventfd_ctx **gasket_interrupt_get_eventfd_ctxs(
-	struct gasket_interrupt_data *interrupt_data);
-
 /*
  * Get the health of the interrupt subsystem.
  * @gasket_dev: The Gasket device struct.
@@ -157,16 +114,5 @@ struct eventfd_ctx **gasket_interrupt_get_eventfd_ctxs(
  */
 
 int gasket_interrupt_system_status(struct gasket_dev *gasket_dev);
-
-/*
- * Masks interrupts and de-register the handler.
- * After an interrupt pause it is not guaranteed that the chip registers will
- * be accessible anymore, since the chip may be in a power save mode,
- * which means that the interrupt handler (if it were to happen) may not
- * have a way to clear the interrupt condition.
- * @gasket_dev: The Gasket device struct
- * @enable_pause: Whether to pause or unpause the interrupts.
- */
-void gasket_interrupt_pause(struct gasket_dev *gasket_dev, int enable_pause);
 
 #endif

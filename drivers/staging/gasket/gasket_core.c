@@ -1,29 +1,28 @@
-/* Gasket generic driver framework. This file contains the implementation
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Gasket generic driver framework. This file contains the implementation
  * for the Gasket generic driver framework - the functionality that is common
  * across Gasket devices.
  *
- * Copyright (C) 2017 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2018 Google, Inc.
  */
 #include "gasket_core.h"
 
 #include "gasket_interrupt.h"
 #include "gasket_ioctl.h"
-#include "gasket_logging.h"
 #include "gasket_page_table.h"
 #include "gasket_sysfs.h"
 
+#include <linux/capability.h>
+#include <linux/compiler.h>
+#include <linux/delay.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/of.h>
+#include <linux/pid_namespace.h>
+#include <linux/printk.h>
+#include <linux/sched.h>
 
 #ifdef GASKET_KERNEL_TRACE_SUPPORT
 #define CREATE_TRACE_POINTS
@@ -195,22 +194,19 @@ static const struct gasket_sysfs_attribute gasket_sysfs_generic_attrs[] = {
 
 MODULE_DESCRIPTION("Google Gasket driver framework");
 MODULE_VERSION(GASKET_FRAMEWORK_VERSION);
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Mark Omernick <momernick@google.com>");
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Rob Springer <rspringer@google.com>");
 module_init(gasket_init);
 module_exit(gasket_exit);
 
-/*
- * Perform a standard Gasket callback.
- * @gasket_dev: Device specific pointer to forward.
- * @cb_function: Standard callback to perform.
- */
+/* Perform a standard Gasket callback. */
 static inline int check_and_invoke_callback(
 	struct gasket_dev *gasket_dev, int (*cb_function)(struct gasket_dev *))
 {
 	int ret = 0;
 
-	gasket_nodev_error("check_and_invoke_callback %p", gasket_dev);
+	dev_dbg(gasket_dev->dev, "check_and_invoke_callback %p\n",
+		cb_function);
 	if (cb_function) {
 		mutex_lock(&gasket_dev->mutex);
 		ret = cb_function(gasket_dev);
@@ -219,42 +215,23 @@ static inline int check_and_invoke_callback(
 	return ret;
 }
 
-/*
- * Perform a standard Gasket callback
- * without grabbing gasket_dev->mutex.
- * @gasket_dev: Device specific pointer to forward.
- * @cb_function: Standard callback to perform.
- *
- */
+/* Perform a standard Gasket callback without grabbing gasket_dev->mutex. */
 static inline int gasket_check_and_invoke_callback_nolock(
 	struct gasket_dev *gasket_dev, int (*cb_function)(struct gasket_dev *))
 {
 	int ret = 0;
 
 	if (cb_function) {
-		gasket_log_info(
-			gasket_dev, "Invoking device-specific callback.");
+		dev_dbg(gasket_dev->dev,
+			"Invoking device-specific callback.\n");
 		ret = cb_function(gasket_dev);
 	}
 	return ret;
 }
 
 /*
- * Retrieve device-specific data via cdev pointer.
- * @cdev_ptr: Character device pointer associated with the device.
- *
- * This function returns the pointer to the device-specific data allocated in
- * add_dev_cb for the device associated with cdev_ptr.
- */
-static struct gasket_cdev_info *gasket_cdev_get_info(struct cdev *cdev_ptr)
-{
-	return container_of(cdev_ptr, struct gasket_cdev_info, cdev);
-}
-
-/*
- * Returns nonzero if the gasket_cdev_info is owned by the current thread group
+ * Return nonzero if the gasket_cdev_info is owned by the current thread group
  * ID.
- * @info: Device node info.
  */
 static int gasket_owned_by_current_tgid(struct gasket_cdev_info *info)
 {
@@ -266,7 +243,7 @@ static int __init gasket_init(void)
 {
 	int i;
 
-	gasket_nodev_info("Performing one-time init of the Gasket framework.");
+	pr_info("Performing one-time init of the Gasket framework.\n");
 	/* Check for duplicates and find a free slot. */
 	mutex_lock(&g_mutex);
 	for (i = 0; i < GASKET_FRAMEWORK_DESC_MAX; i++) {
@@ -283,7 +260,7 @@ static int __init gasket_init(void)
 static void __exit gasket_exit(void)
 {
 	/* No deinit/dealloc needed at present. */
-	gasket_nodev_info("Removing Gasket framework module.");
+	pr_info("Removing Gasket framework module.\n");
 }
 
 /* See gasket_core.h for description. */
@@ -293,15 +270,14 @@ int gasket_register_device(const struct gasket_driver_desc *driver_desc)
 	int desc_idx = -1;
 	struct gasket_internal_desc *internal;
 
-	gasket_nodev_info("Initializing Gasket framework device");
+	pr_info("Initializing Gasket framework device\n");
 	/* Check for duplicates and find a free slot. */
 	mutex_lock(&g_mutex);
 
 	for (i = 0; i < GASKET_FRAMEWORK_DESC_MAX; i++) {
 		if (g_descs[i].driver_desc == driver_desc) {
-			gasket_nodev_error(
-				"%s driver already loaded/registered",
-				driver_desc->name);
+			pr_err("%s driver already loaded/registered\n",
+			       driver_desc->name);
 			mutex_unlock(&g_mutex);
 			return -EBUSY;
 		}
@@ -317,17 +293,17 @@ int gasket_register_device(const struct gasket_driver_desc *driver_desc)
 	}
 	mutex_unlock(&g_mutex);
 
-	gasket_nodev_info("Loaded %s driver, framework version %s",
-			  driver_desc->name, GASKET_FRAMEWORK_VERSION);
+	pr_info("Loaded %s driver, framework version %s\n",
+		driver_desc->name, GASKET_FRAMEWORK_VERSION);
 
 	if (desc_idx == -1) {
-		gasket_nodev_error("Too many Gasket drivers loaded: %d\n",
-				   GASKET_FRAMEWORK_DESC_MAX);
+		pr_err("Too many Gasket drivers loaded: %d\n",
+		       GASKET_FRAMEWORK_DESC_MAX);
 		return -EBUSY;
 	}
 
 	/* Internal structure setup. */
-	gasket_nodev_info("Performing initial internal structure setup.");
+	pr_debug("Performing initial internal structure setup.\n");
 	internal = &g_descs[desc_idx];
 	mutex_init(&internal->mutex);
 	memset(internal->devs, 0, sizeof(struct gasket_dev *) * GASKET_DEV_MAX);
@@ -339,35 +315,35 @@ int gasket_register_device(const struct gasket_driver_desc *driver_desc)
 	internal->class =
 		class_create(driver_desc->module, driver_desc->name);
 
-	if (IS_ERR_OR_NULL(internal->class)) {
-		gasket_nodev_error("Cannot register %s class [ret=%ld]",
-				   driver_desc->name, PTR_ERR(internal->class));
-		return PTR_ERR(internal->class);
+	if (IS_ERR(internal->class)) {
+		pr_err("Cannot register %s class [ret=%ld]\n",
+		       driver_desc->name, PTR_ERR(internal->class));
+		ret = PTR_ERR(internal->class);
+		goto unregister_gasket_driver;
 	}
 
 	/*
 	 * Not using pci_register_driver() (without underscores), as it
 	 * depends on KBUILD_MODNAME, and this is a shared file.
 	 */
-	gasket_nodev_info("Registering PCI driver.");
+	pr_debug("Registering PCI driver.\n");
 	ret = __pci_register_driver(
 		&internal->pci, driver_desc->module, driver_desc->name);
 	if (ret) {
-		gasket_nodev_error(
-			"cannot register pci driver [ret=%d]", ret);
+		pr_err("cannot register pci driver [ret=%d]\n", ret);
 		goto fail1;
 	}
 
-	gasket_nodev_info("Registering char driver.");
+	pr_debug("Registering char driver.\n");
 	ret = register_chrdev_region(
 		MKDEV(driver_desc->major, driver_desc->minor), GASKET_DEV_MAX,
 		driver_desc->name);
 	if (ret) {
-		gasket_nodev_error("cannot register char driver [ret=%d]", ret);
+		pr_err("cannot register char driver [ret=%d]\n", ret);
 		goto fail2;
 	}
 
-	gasket_nodev_info("Driver registered successfully.");
+	pr_info("Driver registered successfully.\n");
 	return 0;
 
 fail2:
@@ -376,7 +352,10 @@ fail2:
 fail1:
 	class_destroy(internal->class);
 
+unregister_gasket_driver:
+	mutex_lock(&g_mutex);
 	g_descs[desc_idx].driver_desc = NULL;
+	mutex_unlock(&g_mutex);
 	return ret;
 }
 EXPORT_SYMBOL(gasket_register_device);
@@ -398,10 +377,9 @@ void gasket_unregister_device(const struct gasket_driver_desc *driver_desc)
 	mutex_unlock(&g_mutex);
 
 	if (!internal_desc) {
-		gasket_nodev_error(
-			"request to unregister unknown desc: %s, %d:%d",
-			driver_desc->name, driver_desc->major,
-			driver_desc->minor);
+		pr_err("request to unregister unknown desc: %s, %d:%d\n",
+		       driver_desc->name, driver_desc->major,
+		       driver_desc->minor);
 		return;
 	}
 
@@ -413,20 +391,17 @@ void gasket_unregister_device(const struct gasket_driver_desc *driver_desc)
 	class_destroy(internal_desc->class);
 
 	/* Finally, effectively "remove" the driver. */
+	mutex_lock(&g_mutex);
 	g_descs[desc_idx].driver_desc = NULL;
+	mutex_unlock(&g_mutex);
 
-	gasket_nodev_info("removed %s driver", driver_desc->name);
+	pr_info("removed %s driver\n", driver_desc->name);
 }
 EXPORT_SYMBOL(gasket_unregister_device);
 
-/**
- * Allocate a Gasket device.
- * @internal_desc: Pointer to the internal data for the device driver.
- * @pdev: Pointer to the Gasket device pointer, the allocated device.
- * @kobj_name: PCIe name for the device
- *
- * Description: Allocates and initializes a Gasket device structure.
- *              Adds the device to the device list.
+/*
+ * Allocate and initialize a Gasket device structure, add the device to the
+ * device list.
  *
  * Returns 0 if successful, a negative error code otherwise.
  */
@@ -440,7 +415,7 @@ static int gasket_alloc_dev(
 	struct gasket_dev *gasket_dev;
 	struct gasket_cdev_info *dev_info;
 
-	gasket_nodev_info("Allocating a Gasket device %s.", kobj_name);
+	pr_debug("Allocating a Gasket device %s.\n", kobj_name);
 
 	*pdev = NULL;
 
@@ -450,7 +425,7 @@ static int gasket_alloc_dev(
 
 	gasket_dev = *pdev = kzalloc(sizeof(*gasket_dev), GFP_KERNEL);
 	if (!gasket_dev) {
-		gasket_nodev_error("no memory for device");
+		pr_err("no memory for device\n");
 		return -ENOMEM;
 	}
 	internal_desc->devs[dev_idx] = gasket_dev;
@@ -460,6 +435,7 @@ static int gasket_alloc_dev(
 	gasket_dev->internal_desc = internal_desc;
 	gasket_dev->dev_idx = dev_idx;
 	snprintf(gasket_dev->kobj_name, GASKET_NAME_MAX, "%s", kobj_name);
+	gasket_dev->dev = get_device(parent);
 	/* gasket_bar_data is uninitialized. */
 	gasket_dev->num_page_tables = driver_desc->num_page_tables;
 	/* max_page_table_size and *page table are uninit'ed */
@@ -475,7 +451,7 @@ static int gasket_alloc_dev(
 	dev_info->device = device_create(internal_desc->class, parent,
 		dev_info->devt, gasket_dev, dev_info->name);
 
-	gasket_nodev_info("Gasket device allocated: %p.", dev_info->device);
+	dev_dbg(dev_info->device, "Gasket device allocated.\n");
 
 	/* cdev has not yet been added; cdev_added is 0 */
 	dev_info->gasket_dev_ptr = gasket_dev;
@@ -484,13 +460,7 @@ static int gasket_alloc_dev(
 	return 0;
 }
 
-/*
- * Free a Gasket device.
- * @internal_dev: Gasket device pointer; the device to unregister and free.
- *
- * Description: Removes the device from the device list and frees
- *              the Gasket device structure.
- */
+/* Free a Gasket device. */
 static void gasket_free_dev(struct gasket_dev *gasket_dev)
 {
 	struct gasket_internal_desc *internal_desc = gasket_dev->internal_desc;
@@ -498,12 +468,13 @@ static void gasket_free_dev(struct gasket_dev *gasket_dev)
 	mutex_lock(&internal_desc->mutex);
 	internal_desc->devs[gasket_dev->dev_idx] = NULL;
 	mutex_unlock(&internal_desc->mutex);
-
+	put_device(gasket_dev->dev);
+	pci_dev_put(gasket_dev->pci_dev);
 	kfree(gasket_dev);
 }
 
 /*
- * Finds the next free gasket_internal_dev slot.
+ * Find the next free gasket_internal_dev slot.
  *
  * Returns the located slot number on success or a negative number on failure.
  */
@@ -518,7 +489,7 @@ static int gasket_find_dev_slot(
 	for (i = 0; i < GASKET_DEV_MAX; i++) {
 		if (internal_desc->devs[i] &&
 		    strcmp(internal_desc->devs[i]->kobj_name, kobj_name) == 0) {
-			gasket_nodev_error("Duplicate device %s", kobj_name);
+			pr_err("Duplicate device %s\n", kobj_name);
 			mutex_unlock(&internal_desc->mutex);
 			return -EBUSY;
 		}
@@ -531,8 +502,7 @@ static int gasket_find_dev_slot(
 	}
 
 	if (i == GASKET_DEV_MAX) {
-		gasket_nodev_info(
-			"Too many registered devices; max %d", GASKET_DEV_MAX);
+		pr_err("Too many registered devices; max %d\n", GASKET_DEV_MAX);
 		mutex_unlock(&internal_desc->mutex);
 		return -EBUSY;
 	}
@@ -541,10 +511,8 @@ static int gasket_find_dev_slot(
 	return i;
 }
 
-/**
+/*
  * PCI subsystem probe function.
- * @pci_dev: PCI device pointer to the new device.
- * @id: PCI device id structure pointer, the vendor and device ids.
  *
  * Called when a Gasket device is found. Allocates device metadata, maps device
  * memory, and calls gasket_enable_dev to prepare the device for active use.
@@ -561,13 +529,13 @@ static int gasket_pci_probe(
 	const struct gasket_driver_desc *driver_desc;
 	struct device *parent;
 
-	gasket_nodev_info("Add Gasket device %s", kobj_name);
+	pr_info("Add Gasket device %s\n", kobj_name);
 
 	mutex_lock(&g_mutex);
 	internal_desc = lookup_internal_desc(pci_dev);
 	mutex_unlock(&g_mutex);
 	if (!internal_desc) {
-		gasket_nodev_info("PCI probe called for unknown driver type");
+		pr_err("PCI probe called for unknown driver type\n");
 		return -ENODEV;
 	}
 
@@ -577,14 +545,14 @@ static int gasket_pci_probe(
 	ret = gasket_alloc_dev(internal_desc, parent, &gasket_dev, kobj_name);
 	if (ret)
 		return ret;
+	gasket_dev->pci_dev = pci_dev_get(pci_dev);
 	if (IS_ERR_OR_NULL(gasket_dev->dev_info.device)) {
-		gasket_nodev_error("Cannot create %s device %s [ret = %ld]",
-				   driver_desc->name, gasket_dev->dev_info.name,
-				   PTR_ERR(gasket_dev->dev_info.device));
+		pr_err("Cannot create %s device %s [ret = %ld]\n",
+		       driver_desc->name, gasket_dev->dev_info.name,
+		       PTR_ERR(gasket_dev->dev_info.device));
 		ret = -ENODEV;
 		goto fail1;
 	}
-	gasket_dev->pci_dev = pci_dev;
 
 	ret = gasket_setup_pci(pci_dev, gasket_dev);
 	if (ret)
@@ -592,7 +560,7 @@ static int gasket_pci_probe(
 
 	ret = check_and_invoke_callback(gasket_dev, driver_desc->add_dev_cb);
 	if (ret) {
-		gasket_log_error(gasket_dev, "Error in add device cb: %d", ret);
+		dev_err(gasket_dev->dev, "Error in add device cb: %d\n", ret);
 		goto fail2;
 	}
 
@@ -608,8 +576,8 @@ static int gasket_pci_probe(
 	ret = sysfs_create_link(&gasket_dev->dev_info.device->kobj,
 				&pci_dev->dev.kobj, dev_name(&pci_dev->dev));
 	if (ret) {
-		gasket_log_error(
-			gasket_dev, "Cannot create sysfs pci link: %d", ret);
+		dev_err(gasket_dev->dev,
+			"Cannot create sysfs pci link: %d\n", ret);
 		goto fail3;
 	}
 	ret = gasket_sysfs_create_entries(
@@ -620,25 +588,15 @@ static int gasket_pci_probe(
 	ret = check_and_invoke_callback(
 		gasket_dev, driver_desc->sysfs_setup_cb);
 	if (ret) {
-		gasket_log_error(
-			gasket_dev, "Error in sysfs setup cb: %d", ret);
+		dev_err(gasket_dev->dev, "Error in sysfs setup cb: %d\n", ret);
 		goto fail5;
 	}
 
 	ret = gasket_enable_dev(internal_desc, gasket_dev);
 	if (ret) {
-		gasket_nodev_error("cannot setup %s device", driver_desc->name);
+		pr_err("cannot setup %s device\n", driver_desc->name);
 		gasket_disable_dev(gasket_dev);
 		goto fail5;
-	}
-
-	if (driver_desc->device_close_cb) {
-		/* Perform a device cleanup, so as to place it in Power Save
-		 * Mode. */
-		ret = driver_desc->device_close_cb(gasket_dev);
-		if (ret)
-			gasket_log_error(
-				gasket_dev, "Device cleanup cb returned %d.", ret);
 	}
 
 	return 0;
@@ -659,7 +617,6 @@ fail1:
 
 /*
  * PCI subsystem remove function.
- * @pci_dev: PCI device pointer; the device to remove.
  *
  * Called to remove a Gasket device. Finds the device in the device list and
  * cleans up metadata.
@@ -695,8 +652,7 @@ static void gasket_pci_remove(struct pci_dev *pci_dev)
 	if (!gasket_dev)
 		return;
 
-	gasket_nodev_info(
-		"remove %s device %s", internal_desc->driver_desc->name,
+	pr_info("remove %s device %s\n", internal_desc->driver_desc->name,
 		gasket_dev->kobj_name);
 
 	gasket_disable_dev(gasket_dev);
@@ -713,8 +669,6 @@ static void gasket_pci_remove(struct pci_dev *pci_dev)
 
 /*
  * Setup PCI & set up memory mapping for the specified device.
- * @pci_dev: pointer to the particular PCI device.
- * @internal_dev: Corresponding Gasket device pointer.
  *
  * Enables the PCI device, reads the BAR registers and sets up pointers to the
  * device's memory mapped IO space.
@@ -726,10 +680,9 @@ static int gasket_setup_pci(
 {
 	int i, mapped_bars, ret;
 
-	gasket_dev->pci_dev = pci_dev;
 	ret = pci_enable_device(pci_dev);
 	if (ret) {
-		gasket_log_error(gasket_dev, "cannot enable PCI device");
+		dev_err(gasket_dev->dev, "cannot enable PCI device\n");
 		return ret;
 	}
 
@@ -766,8 +719,6 @@ static void gasket_cleanup_pci(struct gasket_dev *gasket_dev)
 
 /*
  * Maps the specified bar into kernel space.
- * @internal_dev: Device possessing the BAR to map.
- * @bar_num: The BAR to map.
  *
  * Returns 0 on success, a negative error code otherwise.
  * A zero-sized BAR will not be mapped, but is not an error.
@@ -795,17 +746,16 @@ static int gasket_map_pci_bar(struct gasket_dev *gasket_dev, int bar_num)
 	gasket_dev->bar_data[bar_num].phys_base =
 		(ulong)pci_resource_start(gasket_dev->pci_dev, bar_num);
 	if (!gasket_dev->bar_data[bar_num].phys_base) {
-		gasket_log_error(gasket_dev, "Cannot get BAR%u base address",
-				 bar_num);
+		dev_err(gasket_dev->dev, "Cannot get BAR%u base address\n",
+			bar_num);
 		return -EINVAL;
 	}
 
 	gasket_dev->bar_data[bar_num].length_bytes =
 		(ulong)pci_resource_len(gasket_dev->pci_dev, bar_num);
 	if (gasket_dev->bar_data[bar_num].length_bytes < desc_bytes) {
-		gasket_log_error(
-			gasket_dev,
-			"PCI BAR %u space is too small: %lu; expected >= %lu",
+		dev_err(gasket_dev->dev,
+			"PCI BAR %u space is too small: %lu; expected >= %lu\n",
 			bar_num, gasket_dev->bar_data[bar_num].length_bytes,
 			desc_bytes);
 		return -ENOMEM;
@@ -814,9 +764,8 @@ static int gasket_map_pci_bar(struct gasket_dev *gasket_dev, int bar_num)
 	if (!request_mem_region(gasket_dev->bar_data[bar_num].phys_base,
 				gasket_dev->bar_data[bar_num].length_bytes,
 				gasket_dev->dev_info.name)) {
-		gasket_log_error(
-			gasket_dev,
-			"Cannot get BAR %d memory region %p",
+		dev_err(gasket_dev->dev,
+			"Cannot get BAR %d memory region %p\n",
 			bar_num, &gasket_dev->pci_dev->resource[bar_num]);
 		return -EINVAL;
 	}
@@ -825,9 +774,8 @@ static int gasket_map_pci_bar(struct gasket_dev *gasket_dev, int bar_num)
 		ioremap_nocache(gasket_dev->bar_data[bar_num].phys_base,
 				gasket_dev->bar_data[bar_num].length_bytes);
 	if (!gasket_dev->bar_data[bar_num].virt_base) {
-		gasket_log_error(
-			gasket_dev,
-			"Cannot remap BAR %d memory region %p",
+		dev_err(gasket_dev->dev,
+			"Cannot remap BAR %d memory region %p\n",
 			bar_num, &gasket_dev->pci_dev->resource[bar_num]);
 		ret = -ENOMEM;
 		goto fail;
@@ -847,7 +795,6 @@ fail:
 
 /*
  * Releases PCI BAR mapping.
- * @internal_dev: Device possessing the BAR to unmap.
  *
  * A zero-sized or not-mapped BAR will not be unmapped, but is not an error.
  */
@@ -870,8 +817,8 @@ static void gasket_unmap_pci_bar(struct gasket_dev *dev, int bar_num)
 
 	base = pci_resource_start(dev->pci_dev, bar_num);
 	if (!base) {
-		gasket_log_error(
-			dev, "cannot get PCI BAR%u base address", bar_num);
+		dev_err(dev->dev, "cannot get PCI BAR%u base address\n",
+			bar_num);
 		return;
 	}
 
@@ -879,12 +826,7 @@ static void gasket_unmap_pci_bar(struct gasket_dev *dev, int bar_num)
 	release_mem_region(base, bytes);
 }
 
-/*
- * Handle adding a char device and related info.
- * @dev_info: Pointer to the dev_info struct for this device.
- * @file_ops: The file operations for this device.
- * @owner: The owning module for this device.
- */
+/* Add a char device and related info. */
 static int gasket_add_cdev(
 	struct gasket_cdev_info *dev_info,
 	const struct file_operations *file_ops, struct module *owner)
@@ -895,9 +837,8 @@ static int gasket_add_cdev(
 	dev_info->cdev.owner = owner;
 	ret = cdev_add(&dev_info->cdev, dev_info->devt, 1);
 	if (ret) {
-		gasket_log_error(
-			dev_info->gasket_dev_ptr,
-			"cannot add char device [ret=%d]", ret);
+		dev_err(dev_info->gasket_dev_ptr->dev,
+			"cannot add char device [ret=%d]\n", ret);
 		return ret;
 	}
 	dev_info->cdev_added = 1;
@@ -905,22 +846,13 @@ static int gasket_add_cdev(
 	return 0;
 }
 
-/*
- * Performs final init and marks the device as active.
- * @internal_desc: Pointer to Gasket [internal] driver descriptor structure.
- * @internal_dev: Pointer to Gasket [internal] device structure.
- *
- * Currently forwards all work to device-specific callback; a future phase will
- * extract elements of character device registration here.
- */
+/* Perform final init and marks the device as active. */
 static int gasket_enable_dev(
 	struct gasket_internal_desc *internal_desc,
 	struct gasket_dev *gasket_dev)
 {
 	int tbl_idx;
 	int ret;
-	bool has_dma_ops;
-	struct device *ddev;
 	const struct gasket_driver_desc *driver_desc =
 		internal_desc->driver_desc;
 
@@ -931,37 +863,24 @@ static int gasket_enable_dev(
 		driver_desc->interrupt_bar_index,
 		driver_desc->wire_interrupt_offsets);
 	if (ret) {
-		gasket_log_error(gasket_dev,
-				 "Critical failure to allocate interrupts: %d",
-				 ret);
+		dev_err(gasket_dev->dev,
+			"Critical failure to allocate interrupts: %d\n", ret);
 		gasket_interrupt_cleanup(gasket_dev);
 		return ret;
 	}
 
-	has_dma_ops = true;
-
 	for (tbl_idx = 0; tbl_idx < driver_desc->num_page_tables; tbl_idx++) {
-		gasket_log_debug(
-			gasket_dev, "Initializing page table %d.", tbl_idx);
-		if (gasket_dev->pci_dev) {
-			ddev = &gasket_dev->pci_dev->dev;
-		} else {
-			gasket_log_error(
-				gasket_dev,
-				"gasket_enable_dev with no physical device!!");
-			WARN_ON(1);
-			ddev = NULL;
-		}
+		dev_dbg(gasket_dev->dev, "Initializing page table %d.\n",
+			tbl_idx);
 		ret = gasket_page_table_init(
 			&gasket_dev->page_table[tbl_idx],
 			&gasket_dev->bar_data[
 				driver_desc->page_table_bar_index],
 			&driver_desc->page_table_configs[tbl_idx],
-			ddev, gasket_dev->pci_dev, has_dma_ops);
+			gasket_dev->dev, gasket_dev->pci_dev);
 		if (ret) {
-			gasket_log_error(
-				gasket_dev,
-				"Couldn't init page table %d: %d",
+			dev_err(gasket_dev->dev,
+				"Couldn't init page table %d: %d\n",
 				tbl_idx, ret);
 			return ret;
 		}
@@ -979,23 +898,23 @@ static int gasket_enable_dev(
 	ret = check_and_invoke_callback(
 		gasket_dev, driver_desc->hardware_revision_cb);
 	if (ret < 0) {
-		gasket_log_error(
-			gasket_dev, "Error getting hardware revision: %d", ret);
+		dev_err(gasket_dev->dev,
+			"Error getting hardware revision: %d\n", ret);
 		return ret;
 	}
 	gasket_dev->hardware_revision = ret;
 
 	ret = check_and_invoke_callback(gasket_dev, driver_desc->enable_dev_cb);
 	if (ret) {
-		gasket_log_error(
-			gasket_dev, "Error in enable device cb: %d", ret);
+		dev_err(gasket_dev->dev, "Error in enable device cb: %d\n",
+			ret);
 		return ret;
 	}
 
 	/* device_status_cb returns a device status, not an error code. */
 	gasket_dev->status = gasket_get_hw_status(gasket_dev);
 	if (gasket_dev->status == GASKET_STATUS_DEAD)
-		gasket_log_error(gasket_dev, "Device reported as unhealthy.");
+		dev_err(gasket_dev->dev, "Device reported as unhealthy.\n");
 
 	ret = gasket_add_cdev(
 		&gasket_dev->dev_info, &gasket_file_ops, driver_desc->module);
@@ -1005,13 +924,7 @@ static int gasket_enable_dev(
 	return 0;
 }
 
-/*
- * Disable device operations.
- * @gasket_dev: Pointer to Gasket device structure.
- *
- * Currently forwards all work to device-specific callback; a future phase will
- * extract elements of character device unregistration here.
- */
+/* Disable device operations. */
 static void gasket_disable_dev(struct gasket_dev *gasket_dev)
 {
 	const struct gasket_driver_desc *driver_desc =
@@ -1036,7 +949,7 @@ static void gasket_disable_dev(struct gasket_dev *gasket_dev)
 	check_and_invoke_callback(gasket_dev, driver_desc->disable_dev_cb);
 }
 
-/**
+/*
  * Registered descriptor lookup.
  *
  * Precondition: Called with g_mutex held (to avoid a race on return).
@@ -1084,18 +997,15 @@ const char *gasket_num_name_lookup(
 }
 EXPORT_SYMBOL(gasket_num_name_lookup);
 
-/**
- * Opens the char device file.
- * @inode: Inode structure pointer of the device file.
- * @file: File structure pointer.
+/*
+ * Open the char device file.
  *
- * Description: Called on an open of the device file.  If the open is for
- *              writing, and the device is not owned, this process becomes
- *              the owner.  If the open is for writing and the device is
- *              already owned by some other process, it is an error.  If
- *              this process is the owner, increment the open count.
+ * If the open is for writing, and the device is not owned, this process becomes
+ * the owner.  If the open is for writing and the device is already owned by
+ * some other process, it is an error.  If this process is the owner, increment
+ * the open count.
  *
- *              Returns 0 if successful, a negative error number otherwise.
+ * Returns 0 if successful, a negative error number otherwise.
  */
 static int gasket_open(struct inode *inode, struct file *filp)
 {
@@ -1104,12 +1014,11 @@ static int gasket_open(struct inode *inode, struct file *filp)
 	const struct gasket_driver_desc *driver_desc;
 	struct gasket_ownership *ownership;
 	char task_name[TASK_COMM_LEN];
-	struct gasket_cdev_info *dev_info = gasket_cdev_get_info(inode->i_cdev);
+	struct gasket_cdev_info *dev_info =
+	    container_of(inode->i_cdev, struct gasket_cdev_info, cdev);
+	struct pid_namespace *pid_ns = task_active_pid_ns(current);
+	int is_root = ns_capable(pid_ns->user_ns, CAP_SYS_ADMIN);
 
-	if (!dev_info) {
-		gasket_nodev_error("Unable to retrieve device data");
-		return -EINVAL;
-	}
 	gasket_dev = dev_info->gasket_dev_ptr;
 	driver_desc = gasket_dev->internal_desc->driver_desc;
 	ownership = &dev_info->ownership;
@@ -1117,30 +1026,29 @@ static int gasket_open(struct inode *inode, struct file *filp)
 	filp->private_data = gasket_dev;
 	inode->i_size = 0;
 
-	gasket_log_debug(
-		gasket_dev,
+	dev_dbg(gasket_dev->dev,
 		"Attempting to open with tgid %u (%s) (f_mode: 0%03o, "
-		"fmode_write: %d is_root: %u)",
+		"fmode_write: %d is_root: %u)\n",
 		current->tgid, task_name, filp->f_mode,
-		(filp->f_mode & FMODE_WRITE), capable(CAP_SYS_ADMIN));
+		(filp->f_mode & FMODE_WRITE), is_root);
 
 	/* Always allow non-writing accesses. */
 	if (!(filp->f_mode & FMODE_WRITE)) {
-		gasket_log_debug(gasket_dev, "Allowing read-only opening.");
+		dev_dbg(gasket_dev->dev, "Allowing read-only opening.\n");
 		return 0;
 	}
 
 	mutex_lock(&gasket_dev->mutex);
 
-	gasket_log_debug(
-		gasket_dev, "Current owner open count (owning tgid %u): %d.",
+	dev_dbg(gasket_dev->dev,
+		"Current owner open count (owning tgid %u): %d.\n",
 		ownership->owner, ownership->write_open_count);
 
-	/* Opening a node owned by another TGID is an error (even root.) */
-	if (ownership->is_owned && ownership->owner != current->tgid) {
-		gasket_log_error(
-			gasket_dev,
-			"Process %u is opening a node held by %u.",
+	/* Opening a node owned by another TGID is an error (unless root) */
+	if (ownership->is_owned && ownership->owner != current->tgid &&
+	    !is_root) {
+		dev_err(gasket_dev->dev,
+			"Process %u is opening a node held by %u.\n",
 			current->tgid, ownership->owner);
 		mutex_unlock(&gasket_dev->mutex);
 		return -EPERM;
@@ -1151,37 +1059,32 @@ static int gasket_open(struct inode *inode, struct file *filp)
 		ret = gasket_check_and_invoke_callback_nolock(
 			gasket_dev, driver_desc->device_open_cb);
 		if (ret) {
-			gasket_log_error(
-				gasket_dev, "Error in device open cb: %d", ret);
+			dev_err(gasket_dev->dev,
+				"Error in device open cb: %d\n", ret);
 			mutex_unlock(&gasket_dev->mutex);
 			return ret;
 		}
 		ownership->is_owned = 1;
 		ownership->owner = current->tgid;
-		gasket_log_debug(gasket_dev, "Device owner is now tgid %u",
-				 ownership->owner);
+		dev_dbg(gasket_dev->dev, "Device owner is now tgid %u\n",
+			ownership->owner);
 	}
 
 	ownership->write_open_count++;
 
-	gasket_log_debug(gasket_dev, "New open count (owning tgid %u): %d",
-			 ownership->owner, ownership->write_open_count);
+	dev_dbg(gasket_dev->dev, "New open count (owning tgid %u): %d\n",
+		ownership->owner, ownership->write_open_count);
 
 	mutex_unlock(&gasket_dev->mutex);
 	return 0;
 }
 
-/**
- * gasket_release - Close of the char device file.
- * @inode: Inode structure pointer of the device file.
- * @file: File structure pointer.
+/*
+ * Called on a close of the device file.  If this process is the owner,
+ * decrement the open count.  On last close by the owner, free up buffers and
+ * eventfd contexts, and release ownership.
  *
- * Description: Called on a close of the device file.  If this process
- *              is the owner, decrement the open count.  On last close
- *              by the owner, free up buffers and eventfd contexts, and
- *              release ownership.
- *
- *              Returns 0 if successful, a negative error number otherwise.
+ * Returns 0 if successful, a negative error number otherwise.
  */
 static int gasket_release(struct inode *inode, struct file *file)
 {
@@ -1191,30 +1094,28 @@ static int gasket_release(struct inode *inode, struct file *file)
 	const struct gasket_driver_desc *driver_desc;
 	char task_name[TASK_COMM_LEN];
 	struct gasket_cdev_info *dev_info =
-		(struct gasket_cdev_info *)gasket_cdev_get_info(inode->i_cdev);
-	if (!dev_info) {
-		gasket_nodev_error("Unable to retrieve device data");
-		return -EINVAL;
-	}
+		container_of(inode->i_cdev, struct gasket_cdev_info, cdev);
+	struct pid_namespace *pid_ns = task_active_pid_ns(current);
+	int is_root = ns_capable(pid_ns->user_ns, CAP_SYS_ADMIN);
+
 	gasket_dev = dev_info->gasket_dev_ptr;
 	driver_desc = gasket_dev->internal_desc->driver_desc;
 	ownership = &dev_info->ownership;
 	get_task_comm(task_name, current);
 	mutex_lock(&gasket_dev->mutex);
 
-	gasket_log_debug(
-		gasket_dev,
+	dev_dbg(gasket_dev->dev,
 		"Releasing device node. Call origin: tgid %u (%s) "
-		"(f_mode: 0%03o, fmode_write: %d, is_root: %u)",
+		"(f_mode: 0%03o, fmode_write: %d, is_root: %u)\n",
 		current->tgid, task_name, file->f_mode,
-		(file->f_mode & FMODE_WRITE), capable(CAP_SYS_ADMIN));
-	gasket_log_debug(gasket_dev, "Current open count (owning tgid %u): %d",
-			 ownership->owner, ownership->write_open_count);
+		(file->f_mode & FMODE_WRITE), is_root);
+	dev_dbg(gasket_dev->dev, "Current open count (owning tgid %u): %d\n",
+		ownership->owner, ownership->write_open_count);
 
 	if (file->f_mode & FMODE_WRITE) {
 		ownership->write_open_count--;
 		if (ownership->write_open_count == 0) {
-			gasket_log_info(gasket_dev, "Device is now free");
+			dev_dbg(gasket_dev->dev, "Device is now free\n");
 			ownership->is_owned = 0;
 			ownership->owner = 0;
 
@@ -1235,68 +1136,56 @@ static int gasket_release(struct inode *inode, struct file *file)
 		}
 	}
 
-	gasket_log_info(
-		gasket_dev, "New open count (owning tgid %u): %d",
+	dev_dbg(gasket_dev->dev, "New open count (owning tgid %u): %d\n",
 		ownership->owner, ownership->write_open_count);
 	mutex_unlock(&gasket_dev->mutex);
 	return 0;
 }
 
 /*
- * Permission and validity checking for mmap ops.
- * @gasket_dev: Gasket device information structure.
- * @vma: Standard virtual memory area descriptor.
- *
  * Verifies that the user has permissions to perform the requested mapping and
  * that the provided descriptor/range is of adequate size to hold the range to
  * be mapped.
  */
-static int gasket_mmap_has_permissions(
+static bool gasket_mmap_has_permissions(
 	struct gasket_dev *gasket_dev, struct vm_area_struct *vma,
 	int bar_permissions)
 {
 	int requested_permissions;
 	/* Always allow sysadmin to access. */
 	if (capable(CAP_SYS_ADMIN))
-		return 1;
+		return true;
 
 	/* Never allow non-sysadmins to access to a dead device. */
 	if (gasket_dev->status != GASKET_STATUS_ALIVE) {
-		gasket_log_info(gasket_dev, "Device is dead.");
-		return 0;
+		dev_dbg(gasket_dev->dev, "Device is dead.\n");
+		return false;
 	}
 
 	/* Make sure that no wrong flags are set. */
 	requested_permissions =
 		(vma->vm_flags & (VM_WRITE | VM_READ | VM_EXEC));
 	if (requested_permissions & ~(bar_permissions)) {
-		gasket_log_info(
-			gasket_dev,
+		dev_dbg(gasket_dev->dev,
 			"Attempting to map a region with requested permissions "
-			"0x%x, but region has permissions 0x%x.",
+			"0x%x, but region has permissions 0x%x.\n",
 			requested_permissions, bar_permissions);
-		return 0;
+		return false;
 	}
 
 	/* Do not allow a non-owner to write. */
 	if ((vma->vm_flags & VM_WRITE) &&
 	    !gasket_owned_by_current_tgid(&gasket_dev->dev_info)) {
-		gasket_log_info(
-			gasket_dev,
+		dev_dbg(gasket_dev->dev,
 			"Attempting to mmap a region for write without owning "
-			"device.");
-		return 0;
+			"device.\n");
+		return false;
 	}
 
-	return 1;
+	return true;
 }
 
 /*
- * Checks if an address is within the region
- * allocated for coherent buffer.
- * @driver_desc: driver description.
- * @address: offset of address to check.
- *
  * Verifies that the input address is within the region allocated to coherent
  * buffer.
  */
@@ -1363,9 +1252,9 @@ static bool gasket_mm_get_mapping_addrs(
 	*virt_offset = 0;
 	if (bar_offset + requested_length < range_start) {
 		/*
-		* If the requested region is completely below the range,
-		* there is nothing to map.
-		*/
+		 * If the requested region is completely below the range,
+		 * there is nothing to map.
+		 */
 		return false;
 	} else if (bar_offset <= range_start) {
 		/* If the bar offset is below this range's start
@@ -1439,10 +1328,11 @@ int gasket_mm_unmap_region(
 	 *
 	 * Next multiple of y: ceil_div(x, y) * y
 	 */
-	return zap_vma_ptes(
+	zap_vma_ptes(
 		vma, vma->vm_start + virt_offset,
 		DIV_ROUND_UP(mappable_region.length_bytes, PAGE_SIZE) *
 			PAGE_SIZE);
+	return 0;
 }
 EXPORT_SYMBOL(gasket_mm_unmap_region);
 
@@ -1496,8 +1386,8 @@ static enum do_map_region_status do_map_region(
 			(phys_base + mapped_bytes) >> PAGE_SHIFT,
 			chunk_size, vma->vm_page_prot);
 		if (ret) {
-			gasket_log_error(
-				gasket_dev, "Error remapping PFN range.");
+			dev_err(gasket_dev->dev,
+				"Error remapping PFN range.\n");
 			goto fail;
 		}
 		mapped_bytes += chunk_size;
@@ -1509,9 +1399,8 @@ fail:
 	/* Unmap the partial chunk we mapped. */
 	mappable_region->length_bytes = mapped_bytes;
 	if (gasket_mm_unmap_region(gasket_dev, vma, mappable_region))
-		gasket_log_error(
-			gasket_dev,
-			"Error unmapping partial region 0x%lx (0x%lx bytes)",
+		dev_err(gasket_dev->dev,
+			"Error unmapping partial region 0x%lx (0x%lx bytes)\n",
 			(ulong)virt_offset,
 			(ulong)mapped_bytes);
 
@@ -1522,7 +1411,7 @@ fail:
  * Calculates the offset where the VMA range begins in its containing BAR.
  * The offset is written into bar_offset on success.
  * Returns zero on success, anything else on error.
-*/
+ */
 static int gasket_mm_vma_bar_offset(
 	const struct gasket_dev *gasket_dev, const struct vm_area_struct *vma,
 	ulong *bar_offset)
@@ -1536,9 +1425,8 @@ static int gasket_mm_vma_bar_offset(
 		driver_desc->legacy_mmap_address_offset;
 	bar_index = gasket_get_bar_index(gasket_dev, raw_offset);
 	if (bar_index < 0) {
-		gasket_log_error(
-			gasket_dev,
-			"Unable to find matching bar for address 0x%lx",
+		dev_err(gasket_dev->dev,
+			"Unable to find matching bar for address 0x%lx\n",
 			raw_offset);
 		trace_gasket_mmap_exit(bar_index);
 		return bar_index;
@@ -1549,11 +1437,7 @@ static int gasket_mm_vma_bar_offset(
 	return 0;
 }
 
-/*
- * Map a region of coherent memory.
- * @gasket_dev: Gasket device handle.
- * @vma: Virtual memory area descriptor with region to map.
- */
+/* Map a region of coherent memory. */
 static int gasket_mmap_coherent(
 	struct gasket_dev *gasket_dev, struct vm_area_struct *vma)
 {
@@ -1571,7 +1455,7 @@ static int gasket_mmap_coherent(
 
 	permissions = driver_desc->coherent_buffer_description.permissions;
 	if (!gasket_mmap_has_permissions(gasket_dev, vma, permissions)) {
-		gasket_log_error(gasket_dev, "Permission checking failed.");
+		dev_err(gasket_dev->dev, "Permission checking failed.\n");
 		trace_gasket_mmap_exit(-EPERM);
 		return -EPERM;
 	}
@@ -1583,8 +1467,8 @@ static int gasket_mmap_coherent(
 		(gasket_dev->coherent_buffer.phys_base) >> PAGE_SHIFT,
 		requested_length, vma->vm_page_prot);
 	if (ret) {
-		gasket_log_error(
-			gasket_dev, "Error remapping PFN range err=%d.", ret);
+		dev_err(gasket_dev->dev, "Error remapping PFN range err=%d.\n",
+			ret);
 		trace_gasket_mmap_exit(ret);
 		return ret;
 	}
@@ -1598,16 +1482,7 @@ static int gasket_mmap_coherent(
 	return 0;
 }
 
-/*
- * Maps a device's BARs into user space.
- * @filp: File structure pointer describing this node usage session.
- * @vma: Standard virtual memory area descriptor.
- *
- * Maps the entirety of each of the device's BAR ranges into the user memory
- * range specified by vma.
- *
- * Returns 0 on success, a negative errno on error.
- */
+/* Map a device's BARs into user space. */
 static int gasket_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	int i, ret;
@@ -1618,23 +1493,17 @@ static int gasket_mmap(struct file *filp, struct vm_area_struct *vma)
 	bool is_coherent_region;
 	const struct gasket_driver_desc *driver_desc;
 	struct gasket_dev *gasket_dev = (struct gasket_dev *)filp->private_data;
-	struct gasket_bar_data *bar_data;
 	const struct gasket_bar_desc *bar_desc;
 	struct gasket_mappable_region *map_regions = NULL;
 	int num_map_regions = 0;
 	enum do_map_region_status map_status;
 
-	if (!gasket_dev) {
-		gasket_nodev_error("Unable to retrieve device data");
-		trace_gasket_mmap_exit(-EINVAL);
-		return -EINVAL;
-	}
 	driver_desc = gasket_dev->internal_desc->driver_desc;
 
-	if (vma->vm_start & (PAGE_SIZE - 1)) {
-		gasket_log_error(
-			gasket_dev, "Base address not page-aligned: 0x%p\n",
-			(void *)vma->vm_start);
+	if (vma->vm_start & ~PAGE_MASK) {
+		dev_err(gasket_dev->dev,
+			"Base address not page-aligned: 0x%lx\n",
+			vma->vm_start);
 		trace_gasket_mmap_exit(-EINVAL);
 		return -EINVAL;
 	}
@@ -1653,21 +1522,19 @@ static int gasket_mmap(struct file *filp, struct vm_area_struct *vma)
 	bar_index = gasket_get_bar_index(gasket_dev, raw_offset);
 	is_coherent_region = gasket_is_coherent_region(driver_desc, raw_offset);
 	if (bar_index < 0 && !is_coherent_region) {
-		gasket_log_error(
-			gasket_dev,
-			"Unable to find matching bar for address 0x%lx",
+		dev_err(gasket_dev->dev,
+			"Unable to find matching bar for address 0x%lx\n",
 			raw_offset);
 		trace_gasket_mmap_exit(bar_index);
 		return bar_index;
 	}
 	if (bar_index > 0 && is_coherent_region) {
-		gasket_log_error(
-			gasket_dev,
+		dev_err(gasket_dev->dev,
 			"double matching bar and coherent buffers for address "
-			"0x%lx",
+			"0x%lx\n",
 			raw_offset);
 		trace_gasket_mmap_exit(bar_index);
-		return bar_index;
+		return -EINVAL;
 	}
 
 	vma->vm_private_data = gasket_dev;
@@ -1681,12 +1548,10 @@ static int gasket_mmap(struct file *filp, struct vm_area_struct *vma)
 	 * Subtract the base of the bar from the raw offset to get the
 	 * memory location within the bar to map.
 	 */
-	bar_data = &gasket_dev->bar_data[bar_index];
-
 	bar_desc = &driver_desc->bar_descriptions[bar_index];
 	permissions = bar_desc->permissions;
 	if (!gasket_mmap_has_permissions(gasket_dev, vma, permissions)) {
-		gasket_log_error(gasket_dev, "Permission checking failed.");
+		dev_err(gasket_dev->dev, "Permission checking failed.\n");
 		trace_gasket_mmap_exit(-EPERM);
 		return -EPERM;
 	}
@@ -1699,15 +1564,15 @@ static int gasket_mmap(struct file *filp, struct vm_area_struct *vma)
 	} else {
 		if (!gasket_mmap_has_permissions(gasket_dev, vma,
 						 bar_desc->permissions)) {
-			gasket_log_error(
-				gasket_dev, "Permission checking failed.");
+			dev_err(gasket_dev->dev,
+				"Permission checking failed.\n");
 			trace_gasket_mmap_exit(-EPERM);
 			return -EPERM;
 		}
 		num_map_regions = bar_desc->num_mappable_regions;
-		map_regions = kzalloc(
-			num_map_regions * sizeof(*bar_desc->mappable_regions),
-			GFP_KERNEL);
+		map_regions = kcalloc(num_map_regions,
+				      sizeof(*bar_desc->mappable_regions),
+				      GFP_KERNEL);
 		if (map_regions) {
 			memcpy(map_regions, bar_desc->mappable_regions,
 			       num_map_regions *
@@ -1716,7 +1581,7 @@ static int gasket_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 
 	if (!map_regions || num_map_regions == 0) {
-		gasket_log_error(gasket_dev, "No mappable regions returned!");
+		dev_err(gasket_dev->dev, "No mappable regions returned!\n");
 		return -EINVAL;
 	}
 
@@ -1727,8 +1592,10 @@ static int gasket_mmap(struct file *filp, struct vm_area_struct *vma)
 		/* Try the next region if this one was not mappable. */
 		if (map_status == DO_MAP_REGION_INVALID)
 			continue;
-		if (map_status == DO_MAP_REGION_FAILURE)
+		if (map_status == DO_MAP_REGION_FAILURE) {
+			ret = -ENOMEM;
 			goto fail;
+		}
 
 		has_mapped_anything = 1;
 	}
@@ -1737,9 +1604,8 @@ static int gasket_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	/* If we could not map any memory, the request was invalid. */
 	if (!has_mapped_anything) {
-		gasket_log_error(
-			gasket_dev,
-			"Map request did not contain a valid region.");
+		dev_err(gasket_dev->dev,
+			"Map request did not contain a valid region.\n");
 		trace_gasket_mmap_exit(-EINVAL);
 		return -EINVAL;
 	}
@@ -1753,21 +1619,14 @@ fail:
 	for (i = 0; i < num_map_regions; i++)
 		if (gasket_mm_unmap_region(gasket_dev, vma,
 					   &bar_desc->mappable_regions[i]))
-			gasket_log_error(
-				gasket_dev, "Error unmapping range %d.", i);
+			dev_err(gasket_dev->dev, "Error unmapping range %d.\n",
+				i);
 	kfree(map_regions);
 
 	return ret;
 }
 
-/*
- * Determine the health of the Gasket device.
- * @gasket_dev: Gasket device structure.
- *
- * Checks the underlying device health (via the device_status_cb)
- * and the status of initialized Gasket code systems (currently
- * only interrupts), then returns a gasket_status appropriately.
- */
+/* Determine the health of the Gasket device. */
 static int gasket_get_hw_status(struct gasket_dev *gasket_dev)
 {
 	int status;
@@ -1778,15 +1637,15 @@ static int gasket_get_hw_status(struct gasket_dev *gasket_dev)
 	status = gasket_check_and_invoke_callback_nolock(
 		gasket_dev, driver_desc->device_status_cb);
 	if (status != GASKET_STATUS_ALIVE) {
-		gasket_log_info(gasket_dev, "Hardware reported status %d.",
-				status);
+		dev_dbg(gasket_dev->dev, "Hardware reported status %d.\n",
+			status);
 		return status;
 	}
 
 	status = gasket_interrupt_system_status(gasket_dev);
 	if (status != GASKET_STATUS_ALIVE) {
-		gasket_log_info(gasket_dev,
-				"Interrupt system reported status %d.", status);
+		dev_dbg(gasket_dev->dev,
+			"Interrupt system reported status %d.\n", status);
 		return status;
 	}
 
@@ -1794,8 +1653,8 @@ static int gasket_get_hw_status(struct gasket_dev *gasket_dev)
 		status = gasket_page_table_system_status(
 			gasket_dev->page_table[i]);
 		if (status != GASKET_STATUS_ALIVE) {
-			gasket_log_info(
-				gasket_dev, "Page table %d reported status %d.",
+			dev_dbg(gasket_dev->dev,
+				"Page table %d reported status %d.\n",
 				i, status);
 			return status;
 		}
@@ -1806,37 +1665,23 @@ static int gasket_get_hw_status(struct gasket_dev *gasket_dev)
 
 /*
  * Gasket ioctl dispatch function.
- * @filp: File structure pointer describing this node usage session.
- * @cmd: ioctl number to handle.
- * @arg: ioctl-specific data pointer.
  *
- * First, checks if the ioctl is a generic ioctl. If not, it passes
- * the ioctl to the ioctl_handler_cb registered in the driver description.
- * If the ioctl is a generic ioctl, the function passes it to the
- * gasket_ioctl_handler in gasket_ioctl.c.
+ * Check if the ioctl is a generic ioctl. If not, pass the ioctl to the
+ * ioctl_handler_cb registered in the driver description.
+ * If the ioctl is a generic ioctl, pass it to gasket_ioctl_handler.
  */
 static long gasket_ioctl(struct file *filp, uint cmd, ulong arg)
 {
 	struct gasket_dev *gasket_dev;
 	const struct gasket_driver_desc *driver_desc;
+	void __user *argp = (void __user *)arg;
 	char path[256];
 
-	if (!filp)
-		return -ENODEV;
-
 	gasket_dev = (struct gasket_dev *)filp->private_data;
-	if (!gasket_dev) {
-		gasket_nodev_error(
-			"Unable to find Gasket structure for file %s",
-			d_path(&filp->f_path, path, 256));
-		return -ENODEV;
-	}
-
 	driver_desc = gasket_dev->internal_desc->driver_desc;
 	if (!driver_desc) {
-		gasket_log_error(
-			gasket_dev,
-			"Unable to find device descriptor for file %s",
+		dev_dbg(gasket_dev->dev,
+			"Unable to find device descriptor for file %s\n",
 			d_path(&filp->f_path, path, 256));
 		return -ENODEV;
 	}
@@ -1848,14 +1693,13 @@ static long gasket_ioctl(struct file *filp, uint cmd, ulong arg)
 		 * check_and_invoke_callback.
 		 */
 		if (driver_desc->ioctl_handler_cb)
-			return driver_desc->ioctl_handler_cb(filp, cmd, arg);
+			return driver_desc->ioctl_handler_cb(filp, cmd, argp);
 
-		gasket_log_error(
-			gasket_dev, "Received unknown ioctl 0x%x", cmd);
+		dev_dbg(gasket_dev->dev, "Received unknown ioctl 0x%x\n", cmd);
 		return -EINVAL;
 	}
 
-	return gasket_handle_ioctl(filp, cmd, arg);
+	return gasket_handle_ioctl(filp, cmd, argp);
 }
 
 int gasket_reset(struct gasket_dev *gasket_dev, uint reset_type)
@@ -1876,17 +1720,16 @@ int gasket_reset_nolock(struct gasket_dev *gasket_dev, uint reset_type)
 	const struct gasket_driver_desc *driver_desc;
 
 	driver_desc = gasket_dev->internal_desc->driver_desc;
-	if (!driver_desc->device_reset_cb) {
-		gasket_log_error(
-			gasket_dev, "No device reset callback was registered.");
-		return -EINVAL;
-	}
+	if (!driver_desc->device_reset_cb)
+		return 0;
 
 	/* Perform a device reset of the requested type. */
 	ret = driver_desc->device_reset_cb(gasket_dev, reset_type);
-	if (ret)
-		gasket_log_error(
-			gasket_dev, "Device reset cb returned %d.", ret);
+	if (ret) {
+		dev_dbg(gasket_dev->dev, "Device reset cb returned %d.\n",
+			ret);
+		return ret;
+	}
 
 	/* Reinitialize the page tables and interrupt framework. */
 	for (i = 0; i < driver_desc->num_page_tables; ++i)
@@ -1894,15 +1737,15 @@ int gasket_reset_nolock(struct gasket_dev *gasket_dev, uint reset_type)
 
 	ret = gasket_interrupt_reinit(gasket_dev);
 	if (ret) {
-		gasket_log_error(
-			gasket_dev, "Unable to reinit interrupts: %d.", ret);
+		dev_dbg(gasket_dev->dev, "Unable to reinit interrupts: %d.\n",
+			ret);
 		return ret;
 	}
 
 	/* Get current device health. */
 	gasket_dev->status = gasket_get_hw_status(gasket_dev);
 	if (gasket_dev->status == GASKET_STATUS_DEAD) {
-		gasket_log_error(gasket_dev, "Device reported as dead.");
+		dev_dbg(gasket_dev->dev, "Device reported as dead.\n");
 		return -EINVAL;
 	}
 
@@ -1911,7 +1754,8 @@ int gasket_reset_nolock(struct gasket_dev *gasket_dev, uint reset_type)
 EXPORT_SYMBOL(gasket_reset_nolock);
 
 gasket_ioctl_permissions_cb_t gasket_get_ioctl_permissions_cb(
-	struct gasket_dev *gasket_dev) {
+	struct gasket_dev *gasket_dev)
+{
 	return gasket_dev->internal_desc->driver_desc->ioctl_permissions_cb;
 }
 EXPORT_SYMBOL(gasket_get_ioctl_permissions_cb);
@@ -1929,7 +1773,7 @@ static ssize_t gasket_write_mappable_regions(
 	if (bar_desc.permissions == GASKET_NOMAP)
 		return 0;
 	for (i = 0;
-	     (i < bar_desc.num_mappable_regions) && (total_written < PAGE_SIZE);
+	     i < bar_desc.num_mappable_regions && total_written < PAGE_SIZE;
 	     i++) {
 		min_addr = bar_desc.mappable_regions[i].start -
 			   driver_desc->legacy_mmap_address_offset;
@@ -1957,15 +1801,13 @@ static ssize_t gasket_sysfs_data_show(
 
 	gasket_dev = gasket_sysfs_get_device_data(device);
 	if (!gasket_dev) {
-		gasket_nodev_error(
-			"No sysfs mapping found for device 0x%p", device);
+		dev_err(device, "No sysfs mapping found for device\n");
 		return 0;
 	}
 
 	gasket_attr = gasket_sysfs_get_attr(device, attr);
 	if (!gasket_attr) {
-		gasket_nodev_error(
-			"No sysfs attr found for device 0x%p", device);
+		dev_err(device, "No sysfs attr found for device\n");
 		gasket_sysfs_put_device_data(device, gasket_dev);
 		return 0;
 	}
@@ -2053,8 +1895,8 @@ static ssize_t gasket_sysfs_data_show(
 		}
 		break;
 	default:
-		gasket_log_error(
-			gasket_dev, "Unknown attribute: %s", attr->attr.name);
+		dev_dbg(gasket_dev->dev, "Unknown attribute: %s\n",
+			attr->attr.name);
 		ret = 0;
 		break;
 	}
@@ -2077,54 +1919,8 @@ const struct gasket_driver_desc *gasket_get_driver_desc(struct gasket_dev *dev)
  */
 struct device *gasket_get_device(struct gasket_dev *dev)
 {
-	if (dev->pci_dev)
-		return &dev->pci_dev->dev;
-	return NULL;
+	return dev->dev;
 }
-
-/**
- * Synchronously waits on device.
- * @gasket_dev: Device struct.
- * @bar: Bar
- * @offset: Register offset
- * @mask: Register mask
- * @val: Expected value
- * @timeout_ns: Timeout in nanoseconds
- *
- * Description: Busy waits for a specific combination of bits to be set
- * on a Gasket register.
- **/
-int gasket_wait_sync(
-	struct gasket_dev *gasket_dev, int bar, u64 offset, u64 mask, u64 val,
-	u64 timeout_ns)
-{
-	u64 reg;
-	struct timespec start_time, cur_time;
-	u64 diff_nanosec;
-	int count = 0;
-
-	reg = gasket_dev_read_64(gasket_dev, bar, offset);
-	start_time = current_kernel_time();
-	while ((reg & mask) != val) {
-		count++;
-		cur_time = current_kernel_time();
-		diff_nanosec = (u64)(cur_time.tv_sec - start_time.tv_sec) *
-				       1000000000LL +
-			       (u64)(cur_time.tv_nsec) -
-			       (u64)(start_time.tv_nsec);
-		if (diff_nanosec > timeout_ns) {
-			gasket_log_error(
-				gasket_dev,
-				"gasket_wait_sync timeout: reg %llx count %x "
-				"dma %lld ns\n",
-				offset, count, diff_nanosec);
-			return -1;
-		}
-		reg = gasket_dev_read_64(gasket_dev, bar, offset);
-	}
-	return 0;
-}
-EXPORT_SYMBOL(gasket_wait_sync);
 
 /**
  * Asynchronously waits on device.
@@ -2136,30 +1932,25 @@ EXPORT_SYMBOL(gasket_wait_sync);
  * @max_retries: number of sleep periods
  * @delay_ms: Timeout in milliseconds
  *
- * Description: Busy waits for a specific combination of bits to be set
- * on a Gasket register.
+ * Description: Busy waits for a specific combination of bits to be set on a
+ * Gasket register.
  **/
-int gasket_wait_async(
+int gasket_wait_with_reschedule(
 	struct gasket_dev *gasket_dev, int bar, u64 offset, u64 mask, u64 val,
-	u64 max_retries, u64 delay_ms)
+	uint max_retries, u64 delay_ms)
 {
-	u64 retries = 0;
+	uint retries = 0;
 	u64 tmp;
 
 	while (retries < max_retries) {
 		tmp = gasket_dev_read_64(gasket_dev, bar, offset);
 		if ((tmp & mask) == val)
-			break;
-		schedule_timeout(msecs_to_jiffies(delay_ms));
+			return 0;
+		msleep(delay_ms);
 		retries++;
 	}
-	if (retries == max_retries) {
-		gasket_log_error(
-			gasket_dev,
-			"gasket_wait_async timeout: reg %llx timeout (%llu ms)",
-			offset, max_retries * delay_ms);
-		return -EINVAL;
-	}
-	return 0;
+	dev_dbg(gasket_dev->dev, "%s timeout: reg %llx timeout (%llu ms)\n",
+		__func__, offset, max_retries * delay_ms);
+	return -ETIMEDOUT;
 }
-EXPORT_SYMBOL(gasket_wait_async);
+EXPORT_SYMBOL(gasket_wait_with_reschedule);
