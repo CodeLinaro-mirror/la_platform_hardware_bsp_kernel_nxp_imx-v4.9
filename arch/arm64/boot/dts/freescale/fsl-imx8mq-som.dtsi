@@ -485,6 +485,10 @@
 	status = "okay";
 };
 
+&vpu_pd {
+	power-supply = <&buck4_reg>;
+};
+
 &vpu {
 	regulator-supply = <&buck4_reg>;
 	status = "okay";
