@@ -421,7 +421,7 @@
 					type = "passive";
 				};
 				cpu_alert1: trip1 {
-					temperature = <85000>;
+					temperature = <80000>;
 					hysteresis = <2000>;
 					type = "passive";
 				};
@@ -444,14 +444,19 @@
 					<&throttle_devfreq 0 1>;
 				};
 				map1 {
-					trip = <&cpu_alert1>;
+					trip = <&cpu_alert2>;
 					cooling-device =
 					<&throttle_devfreq 0 2>;
 				};
 				map2 {
-					trip = <&cpu_alert2>;
+					trip = <&cpu_alert0>;
 					cooling-device =
-					<&A53_0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+					<&A53_0 0 1>;
+				};
+				map3 {
+					trip = <&cpu_alert1>;
+					cooling-device =
+					<&A53_0 0 2>;/* the max state depends on CPU OPP */
 				};
 			};
 		};
