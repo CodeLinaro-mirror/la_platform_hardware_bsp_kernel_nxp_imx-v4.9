@@ -1,19 +1,12 @@
-/* Gasket Page Table functionality. This file describes the address
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Gasket Page Table functionality. This file describes the address
  * translation/paging functionality supported by the Gasket driver framework.
  * As much as possible, internal details are hidden to simplify use -
  * all calls are thread-safe (protected by an internal mutex) except where
  * indicated otherwise.
  *
- * Copyright (C) 2017 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2018 Google, Inc.
  */
 
 #ifndef __GASKET_ADDR_TRNSL_H__
@@ -44,7 +37,6 @@ struct gasket_page_table;
  *                 translation table.
  * @device: Device structure for the underlying device. Only used for logging.
  * @pci_dev: PCI system descriptor for the underlying device.
- * @bool has_dma_ops: Whether the page table uses arch specific dma_ops or
  * whether the driver will supply its own.
  *
  * Description: Allocates and initializes data to track address translation -
@@ -58,7 +50,7 @@ int gasket_page_table_init(
 	struct gasket_page_table **ppg_tbl,
 	const struct gasket_bar_data *bar_data,
 	const struct gasket_page_table_config *page_table_config,
-	struct device *device, struct pci_dev *pci_dev, bool dma_ops);
+	struct device *device, struct pci_dev *pci_dev);
 
 /*
  * Deallocate and cleanup page table data.
@@ -169,9 +161,9 @@ int gasket_page_table_lookup_page(
  * specified by both addresses and the size are valid for mapping pages into
  * device memory.
  *
- * Returns 1 if true - if the mapping is bad, 0 otherwise.
+ * Returns true if the mapping is bad, false otherwise.
  */
-int gasket_page_table_are_addrs_bad(
+bool gasket_page_table_are_addrs_bad(
 	struct gasket_page_table *page_table, ulong host_addr, ulong dev_addr,
 	ulong bytes);
 
@@ -185,9 +177,9 @@ int gasket_page_table_are_addrs_bad(
  * specified by the device address and the size is valid for mapping pages into
  * device memory.
  *
- * Returns 1 if true - if the address is bad, 0 otherwise.
+ * Returns true if the address is bad, false otherwise.
  */
-int gasket_page_table_is_dev_addr_bad(
+bool gasket_page_table_is_dev_addr_bad(
 	struct gasket_page_table *page_table, ulong dev_addr, ulong bytes);
 
 /*
@@ -207,13 +199,6 @@ uint gasket_page_table_num_entries(struct gasket_page_table *page_table);
  * @page_table: Gasket page table pointer.
  */
 uint gasket_page_table_num_simple_entries(struct gasket_page_table *page_table);
-
-/*
- * Gets the number of extended entries.
- * @page_table: Gasket page table pointer.
- */
-uint gasket_page_table_num_extended_entries(
-	struct gasket_page_table *page_table);
 
 /*
  * Gets the number of actively pinned pages.

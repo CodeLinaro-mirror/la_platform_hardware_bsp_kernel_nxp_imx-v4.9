@@ -1,18 +1,11 @@
-/* Common Gasket device kernel and user space declarations.
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Common Gasket device kernel and user space declarations.
  *
- * Copyright (C) 2017 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2018 Google, Inc.
  */
-#ifndef __LINUX_GASKET_IOCTL_H__
-#define __LINUX_GASKET_IOCTL_H__
+#ifndef __GASKET_H__
+#define __GASKET_H__
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
@@ -126,4 +119,4 @@ struct gasket_coherent_alloc_config_ioctl {
 #define GASKET_IOCTL_CONFIG_COHERENT_ALLOCATOR                                 \
 	_IOWR(GASKET_IOCTL_BASE, 11, struct gasket_coherent_alloc_config_ioctl)
 
-#endif /* __LINUX_GASKET_IOCTL_H__ */
+#endif /* __GASKET_H__ */

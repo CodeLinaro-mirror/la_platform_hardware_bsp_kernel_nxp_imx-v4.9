@@ -1,15 +1,8 @@
-/* Set of common sysfs utilities.
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Set of common sysfs utilities.
  *
- * Copyright (C) 2017 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2018 Google, Inc.
  */
 
 /* The functions described here are a set of utilities to allow each file in the
@@ -84,15 +77,6 @@ struct gasket_sysfs_attribute {
 	{                                                                      \
 		.attr = __ATTR(_name, S_IRUGO, _show_function, NULL),          \
 		.data.attr_type = _attr_type                                   \
-	}
-#define GASKET_SYSFS_REG(_name, _offset, _bar)                                 \
-	{                                                                      \
-		.attr = __ATTR(_name, S_IRUGO, gasket_sysfs_register_show,     \
-			NULL),                                                 \
-		.data.bar_address = {                                          \
-			.bar = _bar,                                           \
-			.offset = _offset                                      \
-		}                                                              \
 	}
 
 /* Initializes the Gasket sysfs subsystem.
@@ -182,10 +166,6 @@ struct gasket_sysfs_attribute *gasket_sysfs_get_attr(
  */
 void gasket_sysfs_put_attr(
 	struct device *device, struct gasket_sysfs_attribute *attr);
-
-/* Display a register as a sysfs node. */
-ssize_t gasket_sysfs_register_show(
-	struct device *device, struct device_attribute *attr, char *buf);
 
 /*
  * Write to a register sysfs node.

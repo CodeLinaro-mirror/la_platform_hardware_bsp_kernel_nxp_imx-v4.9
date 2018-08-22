@@ -1,38 +1,31 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Apex kernel-userspace interface definition(s).
  *
- * Copyright (C) 2017 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2018 Google, Inc.
  */
-#ifndef __APEX_IOCTL_H__
-#define __APEX_IOCTL_H__
+#ifndef __APEX_H__
+#define __APEX_H__
 
 #include <linux/ioctl.h>
 #include <linux/bitops.h>
 
-#include "linux_gasket_ioctl.h"
+#include "gasket.h"
 
 /* Structural definitions/macros. */
 /* The number of PCI BARs. */
 #define APEX_NUM_BARS 3
 
-/* constants */
+/* Size of a memory page in bytes, and the related number of bits to shift. */
 #define APEX_PAGE_SHIFT 12
 #define APEX_PAGE_SIZE BIT(APEX_PAGE_SHIFT)
 
 #define APEX_EXTENDED_SHIFT 63 /* Extended address bit position. */
 
-/* Addresses are 2^3=8 bytes each. */
-/* page in second level page table */
-/* holds APEX_PAGE_SIZE/8 addresses  */
+/*
+ * Addresses are 2^3=8 bytes each. Page in second level page table holds
+ * APEX_PAGE_SIZE/8 addresses.
+ */
 #define APEX_ADDR_SHIFT 3
 #define APEX_LEVEL_SHIFT (APEX_PAGE_SHIFT - APEX_ADDR_SHIFT)
 #define APEX_LEVEL_SIZE BIT(APEX_LEVEL_SHIFT)
@@ -50,9 +43,7 @@
 #define APEX_RESET_ACCEPTED 0
 
 enum apex_reset_types {
-	APEX_HARD_RESET = 1,
-	APEX_SOFT_RESET = 2,
-	APEX_CHIP_REINIT_RESET = 3
+	APEX_CHIP_REINIT_RESET = 3,
 };
 
 /* Interrupt defines */
@@ -94,4 +85,4 @@ struct apex_gate_clock_ioctl {
 #define APEX_IOCTL_GATE_CLOCK                                                  \
 	_IOW(APEX_IOCTL_BASE, 0, struct apex_gate_clock_ioctl)
 
-#endif /* __APEX_IOCTL_H__ */
+#endif /* __APEX_H__ */

@@ -1,16 +1,9 @@
-/* Gasket generic driver. Defines the set of data types and functions necessary
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Gasket generic driver. Defines the set of data types and functions necessary
  * to define a driver using the Gasket generic driver framework.
  *
- * Copyright (C) 2017 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2018 Google, Inc.
  */
 #ifndef __GASKET_CORE_H__
 #define __GASKET_CORE_H__
@@ -61,9 +54,10 @@ enum gasket_interrupt_type {
 	PLATFORM_WIRE = 2,
 };
 
-/* Used to describe a Gasket interrupt. Contains an interrupt index, a register,
+/*
+ * Used to describe a Gasket interrupt. Contains an interrupt index, a register,
  * and packing data for that interrupt. The register and packing data
- * fields is relevant only for PCI_MSIX interrupt type and can be
+ * fields are relevant only for PCI_MSIX interrupt type and can be
  * set to 0 for everything else.
  */
 struct gasket_interrupt_desc {
@@ -177,9 +171,7 @@ struct gasket_cdev_info {
 	/* Flag indicating if cdev_add has been called for the devices. */
 	int cdev_added;
 
-	/*
-	 * Pointer to pointer to the overall gasket_dev struct for this device.
-	 */
+	/* Pointer to the overall gasket_dev struct for this device. */
 	struct gasket_dev *gasket_dev_ptr;
 
 	/* Ownership data for the device in question. */
@@ -223,9 +215,7 @@ struct gasket_bar_desc {
 
 /* Describes the offset, size, and permissions for a coherent buffer. */
 struct gasket_coherent_buffer_desc {
-	/*
-	 * The size of coherent buffer.
-	 */
+	/* The size of the coherent buffer. */
 	u64 size;
 
 	/* The permissions for this bar. (Should be VM_WRITE/VM_READ/VM_EXEC,
@@ -240,8 +230,6 @@ struct gasket_coherent_buffer_desc {
 
 /* Coherent buffer structure. */
 struct gasket_coherent_buffer {
-	u64 base;
-
 	/* Virtual base address. */
 	u8 __iomem *virt_base;
 
@@ -274,6 +262,9 @@ struct gasket_internal_desc;
 struct gasket_dev {
 	/* Pointer to the internal driver description for this device. */
 	struct gasket_internal_desc *internal_desc;
+
+	/* Device info */
+	struct device *dev;
 
 	/* PCI subsystem metadata. */
 	struct pci_dev *pci_dev;
@@ -321,13 +312,17 @@ struct gasket_dev {
 	struct mutex mutex;
 
 	/* cdev hash tracking/membership structure, Accel and legacy. */
+	/* Unused until Accel is upstreamed. */
 	struct hlist_node hlist_node;
 	struct hlist_node legacy_hlist_node;
 };
 
+/* Type of the ioctl handler callback. */
+typedef long (*gasket_ioctl_handler_cb_t)
+		(struct file *file, uint cmd, void __user *argp);
 /* Type of the ioctl permissions check callback. See below. */
 typedef int (*gasket_ioctl_permissions_cb_t)(
-	struct file *filp, uint cmd, ulong arg);
+	struct file *filp, uint cmd, void __user *argp);
 
 /*
  * Device type descriptor.
@@ -355,6 +350,7 @@ struct gasket_driver_desc {
 	 * Non-zero if we should create "legacy" (device and device-class-
 	 * specific) character devices and sysfs nodes.
 	 */
+	/* Unused until Accel is upstreamed. */
 	int legacy_support;
 
 	/* Major and minor numbers identifying the device. */
@@ -560,7 +556,7 @@ struct gasket_driver_desc {
 	 * return -EINVAL. Should return an error status (either -EINVAL or
 	 * the error result of the ioctl being handled).
 	 */
-	long (*ioctl_handler_cb)(struct file *filp, uint cmd, ulong arg);
+	gasket_ioctl_handler_cb_t ioctl_handler_cb;
 
 	/*
 	 * device_status_cb: Callback to determine device health.
@@ -659,7 +655,6 @@ const char *gasket_num_name_lookup(
 static inline ulong gasket_dev_read_64(
 	struct gasket_dev *gasket_dev, int bar, ulong location)
 {
-	/*TODO: Add endianness support here. */
 	return readq(&gasket_dev->bar_data[bar].virt_base[location]);
 }
 
@@ -688,7 +683,7 @@ static inline void gasket_read_modify_write_64(
 	u64 mask, tmp;
 
 	tmp = gasket_dev_read_64(dev, bar, location);
-	mask = ((1 << mask_width) - 1) << mask_shift;
+	mask = ((1ULL << mask_width) - 1) << mask_shift;
 	tmp = (tmp & ~mask) | (value << mask_shift);
 	gasket_dev_write_64(dev, tmp, bar, location);
 }
@@ -711,14 +706,9 @@ const struct gasket_driver_desc *gasket_get_driver_desc(struct gasket_dev *dev);
 /* Get the device structure for a given device. */
 struct device *gasket_get_device(struct gasket_dev *dev);
 
-/* Helper function, Synchronous waits on a given set of bits. */
-int gasket_wait_sync(
-	struct gasket_dev *gasket_dev, int bar, u64 offset, u64 mask, u64 val,
-	u64 timeout_ns);
-
 /* Helper function, Asynchronous waits on a given set of bits. */
-int gasket_wait_async(
+int gasket_wait_with_reschedule(
 	struct gasket_dev *gasket_dev, int bar, u64 offset, u64 mask, u64 val,
-	u64 max_retries, u64 delay_ms);
+	uint max_retries, u64 delay_ms);
 
 #endif /* __GASKET_CORE_H__ */

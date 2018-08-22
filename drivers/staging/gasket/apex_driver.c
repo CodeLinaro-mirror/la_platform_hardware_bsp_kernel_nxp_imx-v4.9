@@ -1,37 +1,32 @@
-/* Driver for the Apex chip.
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Driver for the Apex chip.
  *
- * Copyright (C) 2017 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (C) 2018 Google, Inc.
  */
 
+#include <linux/compiler.h>
 #include <linux/delay.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/printk.h>
 #include <linux/sched.h>
 #include <linux/uaccess.h>
 
-#include "apex_ioctl.h"
+#include "apex.h"
 
 #include "gasket_core.h"
 #include "gasket_interrupt.h"
-#include "gasket_logging.h"
 #include "gasket_page_table.h"
 #include "gasket_sysfs.h"
 
 /* Constants */
 #define APEX_DEVICE_NAME "Apex"
-#define APEX_DRIVER_VERSION "0.1"
+#define APEX_DRIVER_VERSION "1.0"
 
 /* CSRs are in BAR 2. */
 #define APEX_BAR_INDEX 2
@@ -128,55 +123,6 @@ static struct gasket_page_table_config apex_page_table_configs[NUM_NODES] = {
 	},
 };
 
-/* Function declarations */
-static int __init apex_init(void);
-static void apex_exit(void);
-
-static int apex_add_dev_cb(struct gasket_dev *gasket_dev);
-static int apex_remove_dev_cb(struct gasket_dev *gasket_dev);
-
-static int apex_sysfs_setup_cb(struct gasket_dev *gasket_dev);
-
-static int apex_device_cleanup(struct gasket_dev *gasket_dev);
-
-static int apex_device_open_cb(struct gasket_dev *gasket_dev);
-
-static ssize_t sysfs_show(
-	struct device *device, struct device_attribute *attr, char *buf);
-
-static int apex_reset(struct gasket_dev *gasket_dev, uint type);
-
-static int apex_get_status(struct gasket_dev *gasket_dev);
-
-static uint apex_ioctl_check_permissions(struct file *file, uint cmd);
-
-static long apex_ioctl(struct file *file, uint cmd, ulong arg);
-
-static long apex_clock_gating(struct gasket_dev *gasket_dev, ulong arg);
-
-static int apex_enter_reset(struct gasket_dev *gasket_dev, uint type);
-
-static int apex_quit_reset(struct gasket_dev *gasket_dev, uint type);
-
-static bool is_gcb_in_reset(struct gasket_dev *gasket_dev);
-
-/* Data definitions */
-
-/* The data necessary to display this file's sysfs entries. */
-static struct gasket_sysfs_attribute apex_sysfs_attrs[] = {
-	GASKET_SYSFS_RO(node_0_page_table_entries, sysfs_show,
-			ATTR_KERNEL_HIB_PAGE_TABLE_SIZE),
-	GASKET_SYSFS_RO(node_0_simple_page_table_entries, sysfs_show,
-			ATTR_KERNEL_HIB_SIMPLE_PAGE_TABLE_SIZE),
-	GASKET_SYSFS_RO(node_0_num_mapped_pages, sysfs_show,
-			ATTR_KERNEL_HIB_NUM_ACTIVE_PAGES),
-	GASKET_END_OF_ATTR_ARRAY
-};
-
-static const struct pci_device_id apex_pci_ids[] = {
-	{ PCI_DEVICE(APEX_PCI_VENDOR_ID, APEX_PCI_DEVICE_ID) }, { 0 }
-};
-
 /* The regions in the BAR2 space that can be mapped into user space. */
 static const struct gasket_mappable_region mappable_regions[NUM_REGIONS] = {
 	{ 0x40000, 0x1000 },
@@ -256,6 +202,400 @@ static struct gasket_interrupt_desc apex_interrupts[] = {
 	},
 };
 
+
+/* Allows device to enter power save upon driver close(). */
+static int allow_power_save = 1;
+
+/* Allows SW based clock gating. */
+static int allow_sw_clock_gating;
+
+/* Allows HW based clock gating. */
+/* Note: this is not mutual exclusive with SW clock gating. */
+static int allow_hw_clock_gating = 1;
+
+/* Act as if only GCB is instantiated. */
+static int bypass_top_level;
+
+module_param(allow_power_save, int, 0644);
+module_param(allow_sw_clock_gating, int, 0644);
+module_param(allow_hw_clock_gating, int, 0644);
+module_param(bypass_top_level, int, 0644);
+
+/* Check the device status registers and return device status ALIVE or DEAD. */
+static int apex_get_status(struct gasket_dev *gasket_dev)
+{
+	/* TODO: Check device status. */
+	return GASKET_STATUS_ALIVE;
+}
+
+/* Enter GCB reset state. */
+static int apex_enter_reset(struct gasket_dev *gasket_dev, uint type)
+{
+	if (bypass_top_level)
+		return 0;
+
+	/*
+	 * Software reset:
+	 * Enable sleep mode
+	 *  - Software force GCB idle
+	 *    - Enable GCB idle
+	 */
+	gasket_read_modify_write_64(gasket_dev, APEX_BAR_INDEX,
+				    APEX_BAR2_REG_IDLEGENERATOR_IDLEGEN_IDLEREGISTER,
+				    0x0, 1, 32);
+
+	/*    - Initiate DMA pause */
+	gasket_dev_write_64(gasket_dev, 1, APEX_BAR_INDEX,
+			    APEX_BAR2_REG_USER_HIB_DMA_PAUSE);
+
+	/*    - Wait for DMA pause complete. */
+	if (gasket_wait_with_reschedule(gasket_dev, APEX_BAR_INDEX,
+					APEX_BAR2_REG_USER_HIB_DMA_PAUSED, 1, 1,
+					APEX_RESET_DELAY, APEX_RESET_RETRY)) {
+		dev_err(gasket_dev->dev,
+			"DMAs did not quiesce within timeout (%d ms)\n",
+			APEX_RESET_RETRY * APEX_RESET_DELAY);
+		return -ETIMEDOUT;
+	}
+
+	/*  - Enable GCB reset (0x1 to rg_rst_gcb) */
+	gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+				    APEX_BAR2_REG_SCU_2, 0x1, 2, 2);
+
+	/*  - Enable GCB clock Gate (0x1 to rg_gated_gcb) */
+	gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+				    APEX_BAR2_REG_SCU_2, 0x1, 2, 18);
+
+	/*  - Enable GCB memory shut down (0x3 to rg_force_ram_sd) */
+	gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+				    APEX_BAR2_REG_SCU_3, 0x3, 2, 14);
+
+	/*    - Wait for RAM shutdown. */
+	if (gasket_wait_with_reschedule(gasket_dev, APEX_BAR_INDEX,
+					APEX_BAR2_REG_SCU_3, 1 << 6, 1 << 6,
+					APEX_RESET_DELAY, APEX_RESET_RETRY)) {
+		dev_err(gasket_dev->dev,
+			"RAM did not shut down within timeout (%d ms)\n",
+			APEX_RESET_RETRY * APEX_RESET_DELAY);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+/* Quit GCB reset state. */
+static int apex_quit_reset(struct gasket_dev *gasket_dev, uint type)
+{
+	u32 val0, val1;
+
+	if (bypass_top_level)
+		return 0;
+
+	/*
+	 * Disable sleep mode:
+	 *  - Disable GCB memory shut down:
+	 *    - b00: Not forced (HW controlled)
+	 *    - b1x: Force disable
+	 */
+	gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+				    APEX_BAR2_REG_SCU_3, 0x0, 2, 14);
+
+	/*
+	 *  - Disable software clock gate:
+	 *    - b00: Not forced (HW controlled)
+	 *    - b1x: Force disable
+	 */
+	gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+				    APEX_BAR2_REG_SCU_2, 0x0, 2, 18);
+
+	/*
+	 *  - Disable GCB reset (rg_rst_gcb):
+	 *    - b00: Not forced (HW controlled)
+	 *    - b1x: Force disable = Force not Reset
+	 */
+	gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+				    APEX_BAR2_REG_SCU_2, 0x2, 2, 2);
+
+	/*    - Wait for RAM enable. */
+	if (gasket_wait_with_reschedule(gasket_dev, APEX_BAR_INDEX,
+					APEX_BAR2_REG_SCU_3, 1 << 6, 0,
+					APEX_RESET_DELAY, APEX_RESET_RETRY)) {
+		dev_err(gasket_dev->dev,
+			"RAM did not enable within timeout (%d ms)\n",
+			APEX_RESET_RETRY * APEX_RESET_DELAY);
+		return -ETIMEDOUT;
+	}
+
+	/*    - Wait for Reset complete. */
+	if (gasket_wait_with_reschedule(gasket_dev, APEX_BAR_INDEX,
+					APEX_BAR2_REG_SCU_3,
+					SCU3_CUR_RST_GCB_BIT_MASK, 0,
+					APEX_RESET_DELAY, APEX_RESET_RETRY)) {
+		dev_err(gasket_dev->dev,
+			"GCB did not leave reset within timeout (%d ms)\n",
+			APEX_RESET_RETRY * APEX_RESET_DELAY);
+		return -ETIMEDOUT;
+	}
+
+	if (!allow_hw_clock_gating) {
+		val0 = gasket_dev_read_32(gasket_dev, APEX_BAR_INDEX,
+					  APEX_BAR2_REG_SCU_3);
+		/* Inactive and Sleep mode are disabled. */
+		gasket_read_modify_write_32(gasket_dev,
+					    APEX_BAR_INDEX,
+					    APEX_BAR2_REG_SCU_3, 0x3,
+					    SCU3_RG_PWR_STATE_OVR_MASK_WIDTH,
+					    SCU3_RG_PWR_STATE_OVR_BIT_OFFSET);
+		val1 = gasket_dev_read_32(gasket_dev, APEX_BAR_INDEX,
+					  APEX_BAR2_REG_SCU_3);
+		dev_dbg(gasket_dev->dev,
+			"Disallow HW clock gating 0x%x -> 0x%x\n", val0, val1);
+	} else {
+		val0 = gasket_dev_read_32(gasket_dev, APEX_BAR_INDEX,
+					  APEX_BAR2_REG_SCU_3);
+		/* Inactive mode enabled - Sleep mode disabled. */
+		gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+					    APEX_BAR2_REG_SCU_3, 2,
+					    SCU3_RG_PWR_STATE_OVR_MASK_WIDTH,
+					    SCU3_RG_PWR_STATE_OVR_BIT_OFFSET);
+		val1 = gasket_dev_read_32(gasket_dev, APEX_BAR_INDEX,
+					  APEX_BAR2_REG_SCU_3);
+		dev_dbg(gasket_dev->dev, "Allow HW clock gating 0x%x -> 0x%x\n",
+			val0, val1);
+	}
+
+	return 0;
+}
+
+/* Reset the Apex hardware. Called on final close via device_close_cb. */
+static int apex_device_cleanup(struct gasket_dev *gasket_dev)
+{
+	u64 scalar_error;
+	u64 hib_error;
+	int ret = 0;
+
+	hib_error = gasket_dev_read_64(gasket_dev, APEX_BAR_INDEX,
+				       APEX_BAR2_REG_USER_HIB_ERROR_STATUS);
+	scalar_error = gasket_dev_read_64(gasket_dev, APEX_BAR_INDEX,
+					  APEX_BAR2_REG_SCALAR_CORE_ERROR_STATUS);
+
+	dev_dbg(gasket_dev->dev,
+		"%s 0x%p hib_error 0x%llx scalar_error 0x%llx\n",
+		__func__, gasket_dev, hib_error, scalar_error);
+
+	if (allow_power_save)
+		ret = apex_enter_reset(gasket_dev, APEX_CHIP_REINIT_RESET);
+
+	return ret;
+}
+
+/* Determine if GCB is in reset state. */
+static bool is_gcb_in_reset(struct gasket_dev *gasket_dev)
+{
+	u32 val = gasket_dev_read_32(gasket_dev, APEX_BAR_INDEX,
+				     APEX_BAR2_REG_SCU_3);
+
+	/* Masks rg_rst_gcb bit of SCU_CTRL_2 */
+	return (val & SCU3_CUR_RST_GCB_BIT_MASK);
+}
+
+/* Reset the hardware, then quit reset.  Called on device open. */
+static int apex_reset(struct gasket_dev *gasket_dev, uint type)
+{
+	int ret;
+
+	if (bypass_top_level)
+		return 0;
+
+	if (!is_gcb_in_reset(gasket_dev)) {
+		/* We are not in reset - toggle the reset bit so as to force
+		 * re-init of custom block
+		 */
+		dev_dbg(gasket_dev->dev, "%s: toggle reset\n", __func__);
+
+		ret = apex_enter_reset(gasket_dev, type);
+		if (ret)
+			return ret;
+	}
+	ret = apex_quit_reset(gasket_dev, type);
+
+	return ret;
+}
+
+static int apex_add_dev_cb(struct gasket_dev *gasket_dev)
+{
+	ulong page_table_ready, msix_table_ready;
+	int retries = 0;
+
+	apex_reset(gasket_dev, 0);
+
+	while (retries < APEX_RESET_RETRY) {
+		page_table_ready =
+			gasket_dev_read_64(gasket_dev, APEX_BAR_INDEX,
+					   APEX_BAR2_REG_KERNEL_HIB_PAGE_TABLE_INIT);
+		msix_table_ready =
+			gasket_dev_read_64(gasket_dev, APEX_BAR_INDEX,
+					   APEX_BAR2_REG_KERNEL_HIB_MSIX_TABLE_INIT);
+		if (page_table_ready && msix_table_ready)
+			break;
+		schedule_timeout(msecs_to_jiffies(APEX_RESET_DELAY));
+		retries++;
+	}
+
+	if (retries == APEX_RESET_RETRY) {
+		if (!page_table_ready)
+			dev_err(gasket_dev->dev, "Page table init timed out\n");
+		if (!msix_table_ready)
+			dev_err(gasket_dev->dev, "MSI-X table init timed out\n");
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+/*
+ * Check permissions for Apex ioctls.
+ * Returns true if the current user may execute this ioctl, and false otherwise.
+ */
+static bool apex_ioctl_check_permissions(struct file *filp, uint cmd)
+{
+	return !!(filp->f_mode & FMODE_WRITE);
+}
+
+/* Gates or un-gates Apex clock. */
+static long apex_clock_gating(struct gasket_dev *gasket_dev,
+			      struct apex_gate_clock_ioctl __user *argp)
+{
+	struct apex_gate_clock_ioctl ibuf;
+
+	if (bypass_top_level || !allow_sw_clock_gating)
+		return 0;
+
+	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
+		return -EFAULT;
+
+	dev_dbg(gasket_dev->dev, "%s %llu\n", __func__, ibuf.enable);
+
+	if (ibuf.enable) {
+		/* Quiesce AXI, gate GCB clock. */
+		gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+					    APEX_BAR2_REG_AXI_QUIESCE, 0x1, 1,
+					    16);
+		gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+					    APEX_BAR2_REG_GCB_CLOCK_GATE, 0x1,
+					    2, 18);
+	} else {
+		/* Un-gate GCB clock, un-quiesce AXI. */
+		gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+					    APEX_BAR2_REG_GCB_CLOCK_GATE, 0x0,
+					    2, 18);
+		gasket_read_modify_write_32(gasket_dev, APEX_BAR_INDEX,
+					    APEX_BAR2_REG_AXI_QUIESCE, 0x0, 1,
+					    16);
+	}
+	return 0;
+}
+
+/* Apex-specific ioctl handler. */
+static long apex_ioctl(struct file *filp, uint cmd, void __user *argp)
+{
+	struct gasket_dev *gasket_dev = filp->private_data;
+
+	if (!apex_ioctl_check_permissions(filp, cmd))
+		return -EPERM;
+
+	switch (cmd) {
+	case APEX_IOCTL_GATE_CLOCK:
+		return apex_clock_gating(gasket_dev, argp);
+	default:
+		return -ENOTTY; /* unknown command */
+	}
+}
+
+/* Display driver sysfs entries. */
+static ssize_t sysfs_show(struct device *device, struct device_attribute *attr,
+			  char *buf)
+{
+	int ret;
+	struct gasket_dev *gasket_dev;
+	struct gasket_sysfs_attribute *gasket_attr;
+	enum sysfs_attribute_type type;
+
+	gasket_dev = gasket_sysfs_get_device_data(device);
+	if (!gasket_dev) {
+		dev_err(device, "No Apex device sysfs mapping found\n");
+		return -ENODEV;
+	}
+
+	gasket_attr = gasket_sysfs_get_attr(device, attr);
+	if (!gasket_attr) {
+		dev_err(device, "No Apex device sysfs attr data found\n");
+		gasket_sysfs_put_device_data(device, gasket_dev);
+		return -ENODEV;
+	}
+
+	type = (enum sysfs_attribute_type)gasket_sysfs_get_attr(device, attr);
+	switch (type) {
+	case ATTR_KERNEL_HIB_PAGE_TABLE_SIZE:
+		ret = scnprintf(buf, PAGE_SIZE, "%u\n",
+				gasket_page_table_num_entries(
+					gasket_dev->page_table[0]));
+		break;
+	case ATTR_KERNEL_HIB_SIMPLE_PAGE_TABLE_SIZE:
+		ret = scnprintf(buf, PAGE_SIZE, "%u\n",
+				gasket_page_table_num_entries(
+					gasket_dev->page_table[0]));
+		break;
+	case ATTR_KERNEL_HIB_NUM_ACTIVE_PAGES:
+		ret = scnprintf(buf, PAGE_SIZE, "%u\n",
+				gasket_page_table_num_active_pages(
+					gasket_dev->page_table[0]));
+		break;
+	default:
+		dev_dbg(gasket_dev->dev, "Unknown attribute: %s\n",
+			attr->attr.name);
+		ret = 0;
+		break;
+	}
+
+	gasket_sysfs_put_attr(device, gasket_attr);
+	gasket_sysfs_put_device_data(device, gasket_dev);
+	return ret;
+}
+
+static struct gasket_sysfs_attribute apex_sysfs_attrs[] = {
+	GASKET_SYSFS_RO(node_0_page_table_entries, sysfs_show,
+			ATTR_KERNEL_HIB_PAGE_TABLE_SIZE),
+	GASKET_SYSFS_RO(node_0_simple_page_table_entries, sysfs_show,
+			ATTR_KERNEL_HIB_SIMPLE_PAGE_TABLE_SIZE),
+	GASKET_SYSFS_RO(node_0_num_mapped_pages, sysfs_show,
+			ATTR_KERNEL_HIB_NUM_ACTIVE_PAGES),
+	GASKET_END_OF_ATTR_ARRAY
+};
+
+static int apex_sysfs_setup_cb(struct gasket_dev *gasket_dev)
+{
+	return gasket_sysfs_create_entries(gasket_dev->dev_info.device,
+					   apex_sysfs_attrs);
+}
+
+/* On device open, perform a core reinit reset. */
+static int apex_device_open_cb(struct gasket_dev *gasket_dev)
+{
+	return gasket_reset_nolock(gasket_dev, APEX_CHIP_REINIT_RESET);
+}
+
+static const struct pci_device_id apex_pci_ids[] = {
+	{ PCI_DEVICE(APEX_PCI_VENDOR_ID, APEX_PCI_DEVICE_ID) }, { 0 }
+};
+
+static void apex_pci_fixup_class(struct pci_dev *pdev)
+{
+	pdev->class = (PCI_CLASS_SYSTEM_OTHER << 8) | pdev->class;
+}
+DECLARE_PCI_FIXUP_CLASS_HEADER(APEX_PCI_VENDOR_ID, APEX_PCI_DEVICE_ID,
+			       PCI_CLASS_NOT_DEFINED, 8, apex_pci_fixup_class);
+
 static struct gasket_driver_desc apex_desc = {
 	.name = "apex",
 	.driver_version = APEX_DRIVER_VERSION,
@@ -290,7 +630,7 @@ static struct gasket_driver_desc apex_desc = {
 	.interrupt_pack_width = 7,
 
 	.add_dev_cb = apex_add_dev_cb,
-	.remove_dev_cb = apex_remove_dev_cb,
+	.remove_dev_cb = NULL,
 
 	.enable_dev_cb = NULL,
 	.disable_dev_cb = NULL,
@@ -307,33 +647,6 @@ static struct gasket_driver_desc apex_desc = {
 	.device_reset_cb = apex_reset,
 };
 
-/* Module registration boilerplate */
-MODULE_DESCRIPTION("Google Apex driver");
-MODULE_VERSION(APEX_DRIVER_VERSION);
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Rob Springer <rspringer@google.com>");
-MODULE_DEVICE_TABLE(pci, apex_pci_ids);
-module_init(apex_init);
-module_exit(apex_exit);
-
-/* Allows device to enter power save upon driver close(). */
-static int allow_power_save = 1;
-
-/* Allows SW based clock gating. */
-static int allow_sw_clock_gating;
-
-/* Allows HW based clock gating. */
-/* Note: this is not mutual exclusive with SW clock gating. */
-static int allow_hw_clock_gating = 1;
-
-/* Act as if only GCB is instantiated. */
-static int bypass_top_level;
-
-module_param(allow_power_save, int, 0644);
-module_param(allow_sw_clock_gating, int, 0644);
-module_param(allow_hw_clock_gating, int, 0644);
-module_param(bypass_top_level, int, 0644);
-
 static int __init apex_init(void)
 {
 	return gasket_register_device(&apex_desc);
@@ -343,462 +656,10 @@ static void apex_exit(void)
 {
 	gasket_unregister_device(&apex_desc);
 }
-
-static int apex_add_dev_cb(struct gasket_dev *gasket_dev)
-{
-	ulong page_table_ready, msix_table_ready;
-	int retries = 0;
-
-	gasket_log_error(gasket_dev, "apex_add_dev_cb.");
-
-	apex_reset(gasket_dev, 0);
-
-	while (retries < APEX_RESET_RETRY) {
-		page_table_ready =
-			gasket_dev_read_64(
-				gasket_dev, APEX_BAR_INDEX,
-				APEX_BAR2_REG_KERNEL_HIB_PAGE_TABLE_INIT);
-		msix_table_ready =
-			gasket_dev_read_64(
-				gasket_dev, APEX_BAR_INDEX,
-				APEX_BAR2_REG_KERNEL_HIB_MSIX_TABLE_INIT);
-		if (page_table_ready && msix_table_ready)
-			break;
-		schedule_timeout(msecs_to_jiffies(APEX_RESET_DELAY));
-		retries++;
-	}
-
-	if (retries == APEX_RESET_RETRY) {
-		if (!page_table_ready)
-			gasket_log_error(
-				gasket_dev, "Page table init timed out.");
-		if (!msix_table_ready)
-			gasket_log_error(
-				gasket_dev, "MSI-X table init timed out.");
-		return -ETIMEDOUT;
-	}
-
-	return 0;
-}
-
-static int apex_remove_dev_cb(struct gasket_dev *gasket_dev)
-{
-	return 0;
-}
-
-static int apex_sysfs_setup_cb(struct gasket_dev *gasket_dev)
-{
-	return gasket_sysfs_create_entries(
-		gasket_dev->dev_info.device, apex_sysfs_attrs);
-}
-
-/* On device open, we want to perform a core reinit reset. */
-static int apex_device_open_cb(struct gasket_dev *gasket_dev)
-{
-	return gasket_reset_nolock(gasket_dev, APEX_CHIP_REINIT_RESET);
-}
-
-/**
- * apex_get_status - Set device status.
- * @dev: Apex device struct.
- *
- * Description: Check the device status registers and set the driver status
- *		to ALIVE or DEAD.
- *
- *		Returns 0 if status is ALIVE, a negative error number otherwise.
- */
-static int apex_get_status(struct gasket_dev *gasket_dev)
-{
-	/* TODO: Check device status. */
-	return GASKET_STATUS_ALIVE;
-}
-
-/**
- * apex_device_cleanup - Clean up Apex HW after close.
- * @gasket_dev: Gasket device pointer.
- *
- * Description: Resets the Apex hardware. Called on final close via
- * device_close_cb.
- */
-static int apex_device_cleanup(struct gasket_dev *gasket_dev)
-{
-	u64 scalar_error;
-	u64 hib_error;
-	int ret = 0;
-
-	hib_error = gasket_dev_read_64(
-		gasket_dev, APEX_BAR_INDEX,
-		APEX_BAR2_REG_USER_HIB_ERROR_STATUS);
-	scalar_error = gasket_dev_read_64(
-		gasket_dev, APEX_BAR_INDEX,
-		APEX_BAR2_REG_SCALAR_CORE_ERROR_STATUS);
-
-	gasket_log_info(
-		gasket_dev,
-		"apex_device_cleanup 0x%p hib_error 0x%llx scalar_error "
-		"0x%llx.",
-		gasket_dev, hib_error, scalar_error);
-
-	if (allow_power_save)
-		ret = apex_enter_reset(gasket_dev, APEX_CHIP_REINIT_RESET);
-
-	return ret;
-}
-
-/**
- * apex_reset - Quits reset.
- * @gasket_dev: Gasket device pointer.
- *
- * Description: Resets the hardware, then quits reset.
- * Called on device open.
- *
- */
-static int apex_reset(struct gasket_dev *gasket_dev, uint type)
-{
-	int ret;
-
-	if (bypass_top_level)
-		return 0;
-
-	gasket_log_debug(gasket_dev, "apex_reset.");
-
-	if (!is_gcb_in_reset(gasket_dev)) {
-		/* We are not in reset - toggle the reset bit so as to force
-		 * re-init of custom block
-		 */
-		gasket_log_debug(gasket_dev, "apex_reset: toggle reset.");
-
-		ret = apex_enter_reset(gasket_dev, type);
-		if (ret)
-			return ret;
-	}
-	ret = apex_quit_reset(gasket_dev, type);
-
-	return ret;
-}
-
-/*
- * Enters GCB reset state.
- */
-static int apex_enter_reset(struct gasket_dev *gasket_dev, uint type)
-{
-	u32 val0, val1;
-
-	if (bypass_top_level)
-		return 0;
-
-	gasket_log_debug(gasket_dev, "apex_enter_reset.");
-
-	/* Unconditional logs, temporary for SoC validation : print values of
-	 * SCU2/3 before a reset
-	 */
-	val0 = gasket_dev_read_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_2);
-	val1 = gasket_dev_read_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3);
-	gasket_log_error(
-		gasket_dev, "Enter Reset: SCU2=0x%x SCU3=0x%x", val0, val1);
-
-	/*
-	 * Software reset:
-	 * Enable sleep mode
-	 *  - Software force GCB idle
-	 *    - Enable GCB idle
-	 */
-	gasket_read_modify_write_64(
-		gasket_dev, APEX_BAR_INDEX,
-		APEX_BAR2_REG_IDLEGENERATOR_IDLEGEN_IDLEREGISTER, 0x0, 1, 32);
-
-	/*    - Initiate DMA pause */
-	gasket_dev_write_64(gasket_dev, 1, APEX_BAR_INDEX,
-			    APEX_BAR2_REG_USER_HIB_DMA_PAUSE);
-
-	/*    - Wait for DMA pause complete. */
-	if (gasket_wait_async(gasket_dev, APEX_BAR_INDEX,
-			      APEX_BAR2_REG_USER_HIB_DMA_PAUSED, 1, 1,
-			      APEX_RESET_DELAY, APEX_RESET_RETRY)) {
-		gasket_log_error(gasket_dev,
-				 "DMAs did not quiece within timeout (%d ms)",
-				 APEX_RESET_RETRY * APEX_RESET_DELAY);
-		return -EINVAL;
-	}
-
-	/*  - Enable GCB reset (0x1 to rg_rst_gcb) */
-	gasket_read_modify_write_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_2, 0x1, 2, 2);
-
-	/*  - Enable GCB clock Gate (0x1 to rg_gated_gcb) */
-	gasket_read_modify_write_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_2, 0x1, 2, 18);
-
-	/*  - Enable GCB memory shut down (0x3 to rg_force_ram_sd) */
-	gasket_read_modify_write_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3, 0x3, 2, 14);
-
-	/*  - Enable cb clock 62.5 mhz */
-	gasket_read_modify_write_32(
-			gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3, 0x3, 2, 28);
-
-	/*    - Wait for RAM shutdown. */
-	if (gasket_wait_async(gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3,
-			      1 << 6, 1 << 6, APEX_RESET_DELAY,
-			      APEX_RESET_RETRY)) {
-		gasket_log_error(
-			gasket_dev,
-			"RAM did not shut down within timeout (%d ms)",
-			APEX_RESET_RETRY * APEX_RESET_DELAY);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-/*
- * Quits GCB reset state.
- */
-static int apex_quit_reset(struct gasket_dev *gasket_dev, uint type)
-{
-	u32 val0, val1;
-
-	if (bypass_top_level)
-		return 0;
-
-	gasket_log_debug(gasket_dev, "apex_quit_reset.");
-
-	/*
-	 * Disable sleep mode:
-	 *  - Disable GCB memory shut down:
-	 *    - b00: Not forced (HW controlled)
-	 *    - b1x: Force disable
-	 */
-	gasket_read_modify_write_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3, 0x0, 2, 14);
-
-	/*
-	 *  - Disable software clock gate:
-	 *    - b00: Not forced (HW controlled)
-	 *    - b1x: Force disable
-	 */
-	gasket_read_modify_write_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_2, 0x0, 2, 18);
-
-	/*
-	 *  - Disable GCB reset (rg_rst_gcb):
-	 *    - b00: Not forced (HW controlled)
-	 *    - b1x: Force disable = Force not Reset
-	 */
-	gasket_read_modify_write_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_2, 0x2, 2, 2);
-
-	/*  - Restore cb clock 125 MHz */
-	gasket_read_modify_write_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3, 0x2, 2, 28);
-
-	/*    - Wait for RAM enable. */
-	if (gasket_wait_async(gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3,
-			      1 << 6, 0, APEX_RESET_DELAY, APEX_RESET_RETRY)) {
-		gasket_log_error(
-			gasket_dev,
-			"RAM did not enable within timeout (%d ms)",
-			APEX_RESET_RETRY * APEX_RESET_DELAY);
-		return -EINVAL;
-	}
-
-	/*    - Wait for Reset complete. */
-	if (gasket_wait_async(gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3,
-			      SCU3_CUR_RST_GCB_BIT_MASK, 0, APEX_RESET_DELAY,
-			      APEX_RESET_RETRY)) {
-		gasket_log_error(
-			gasket_dev,
-			"GCB did not leave reset within timeout (%d ms)",
-			APEX_RESET_RETRY * APEX_RESET_DELAY);
-		return -EINVAL;
-	}
-
-	if (!allow_hw_clock_gating) {
-		val0 = gasket_dev_read_32(
-			gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3);
-		/* Inactive and Sleep mode are disabled. */
-		gasket_read_modify_write_32(
-			gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3, 0x3,
-			SCU3_RG_PWR_STATE_OVR_MASK_WIDTH,
-			SCU3_RG_PWR_STATE_OVR_BIT_OFFSET);
-		val1 = gasket_dev_read_32(
-			gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3);
-		gasket_log_error(
-			gasket_dev, "Disallow HW clock gating 0x%x -> 0x%x",
-			val0, val1);
-	} else {
-		val0 = gasket_dev_read_32(
-			gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3);
-		/* Inactive mode enabled - Sleep mode disabled. */
-		gasket_read_modify_write_32(
-			gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3, 2,
-			SCU3_RG_PWR_STATE_OVR_MASK_WIDTH,
-			SCU3_RG_PWR_STATE_OVR_BIT_OFFSET);
-		val1 = gasket_dev_read_32(
-			gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3);
-		gasket_log_error(
-			gasket_dev, "Allow HW clock gating 0x%x -> 0x%x", val0,
-			val1);
-	}
-
-	/* Temporary for SoC validation - print values of SCU2/3 after reset.
-	 */
-	val0 = gasket_dev_read_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_2);
-	val1 = gasket_dev_read_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3);
-	gasket_log_error(
-		gasket_dev, "Quit Reset: SCU2=0x%x SCU3=0x%x", val0, val1);
-
-	return 0;
-}
-
-/*
- * Determines if GCB is in reset state.
- */
-static bool is_gcb_in_reset(struct gasket_dev *gasket_dev)
-{
-	u32 val = gasket_dev_read_32(
-		gasket_dev, APEX_BAR_INDEX, APEX_BAR2_REG_SCU_3);
-
-	/* Masks rg_rst_gcb bit of SCU_CTRL_2 */
-	return (val & SCU3_CUR_RST_GCB_BIT_MASK);
-}
-
-/*
- * Check permissions for Apex ioctls.
- * @file: File pointer from ioctl.
- * @cmd: ioctl command.
- *
- * Returns 1 if the current user may execute this ioctl, and 0 otherwise.
- */
-static uint apex_ioctl_check_permissions(struct file *filp, uint cmd)
-{
-	struct gasket_dev *gasket_dev = filp->private_data;
-	int root = capable(CAP_SYS_ADMIN);
-	int is_owner = gasket_dev->dev_info.ownership.is_owned &&
-		       current->tgid == gasket_dev->dev_info.ownership.owner;
-
-	if (root || is_owner)
-		return 1;
-	return 0;
-}
-
-/*
- * Apex-specific ioctl handler.
- */
-static long apex_ioctl(struct file *filp, uint cmd, ulong arg)
-{
-	struct gasket_dev *gasket_dev = filp->private_data;
-
-	if (!apex_ioctl_check_permissions(filp, cmd))
-		return -EPERM;
-
-	switch (cmd) {
-	case APEX_IOCTL_GATE_CLOCK:
-		return apex_clock_gating(gasket_dev, arg);
-	default:
-		return -ENOTTY; /* unknown command */
-	}
-}
-
-/*
- * Gates or un-gates Apex clock.
- * @gasket_dev: Gasket device pointer.
- * @arg: User ioctl arg, in this case to a apex_gate_clock_ioctl struct.
- */
-static long apex_clock_gating(struct gasket_dev *gasket_dev, ulong arg)
-{
-	struct apex_gate_clock_ioctl ibuf;
-
-	if (bypass_top_level)
-		return 0;
-
-	if (allow_sw_clock_gating) {
-		if (copy_from_user(&ibuf, (void __user *)arg, sizeof(ibuf)))
-			return -EFAULT;
-
-		gasket_log_error(
-			gasket_dev, "apex_clock_gating %llu", ibuf.enable);
-
-		if (ibuf.enable) {
-			/* Quiesce AXI, gate GCB clock. */
-			gasket_read_modify_write_32(
-				gasket_dev, APEX_BAR_INDEX,
-				APEX_BAR2_REG_AXI_QUIESCE, 0x1, 1, 16);
-			gasket_read_modify_write_32(
-				gasket_dev, APEX_BAR_INDEX,
-				APEX_BAR2_REG_GCB_CLOCK_GATE, 0x1, 2, 18);
-		} else {
-			/* Un-gate GCB clock, un-quiesce AXI. */
-			gasket_read_modify_write_32(
-				gasket_dev, APEX_BAR_INDEX,
-				APEX_BAR2_REG_GCB_CLOCK_GATE, 0x0, 2, 18);
-			gasket_read_modify_write_32(
-				gasket_dev, APEX_BAR_INDEX,
-				APEX_BAR2_REG_AXI_QUIESCE, 0x0, 1, 16);
-		}
-	}
-	return 0;
-}
-
-/*
- * Display driver sysfs entries.
- * @device: Kernel device structure.
- * @attr: Attribute to display.
- * @buf: Buffer to which to write output.
- *
- * Description: Looks up the driver data and file-specific attribute data (the
- * type of the attribute), then fills "buf" accordingly.
- */
-static ssize_t sysfs_show(
-	struct device *device, struct device_attribute *attr, char *buf)
-{
-	int ret;
-	struct gasket_dev *gasket_dev;
-	struct gasket_sysfs_attribute *gasket_attr;
-	enum sysfs_attribute_type type;
-
-	gasket_dev = gasket_sysfs_get_device_data(device);
-	if (!gasket_dev) {
-		gasket_nodev_error("No Apex device sysfs mapping found");
-		return 0;
-	}
-
-	gasket_attr = gasket_sysfs_get_attr(device, attr);
-	if (!gasket_attr) {
-		gasket_nodev_error("No Apex device sysfs attr data found");
-		gasket_sysfs_put_device_data(device, gasket_dev);
-		return 0;
-	}
-
-	type = (enum sysfs_attribute_type)gasket_sysfs_get_attr(device, attr);
-	switch (type) {
-	case ATTR_KERNEL_HIB_PAGE_TABLE_SIZE:
-		ret = scnprintf(buf, PAGE_SIZE, "%u\n",
-				gasket_page_table_num_entries(
-					gasket_dev->page_table[0]));
-		break;
-	case ATTR_KERNEL_HIB_SIMPLE_PAGE_TABLE_SIZE:
-		ret = scnprintf(buf, PAGE_SIZE, "%u\n",
-				gasket_page_table_num_entries(
-					gasket_dev->page_table[0]));
-		break;
-	case ATTR_KERNEL_HIB_NUM_ACTIVE_PAGES:
-		ret = scnprintf(buf, PAGE_SIZE, "%u\n",
-				gasket_page_table_num_active_pages(
-					gasket_dev->page_table[0]));
-		break;
-	default:
-		gasket_log_error(
-			gasket_dev, "Unknown attribute: %s", attr->attr.name);
-		ret = 0;
-		break;
-	}
-
-	gasket_sysfs_put_attr(device, gasket_attr);
-	gasket_sysfs_put_device_data(device, gasket_dev);
-	return ret;
-}
+MODULE_DESCRIPTION("Google Apex driver");
+MODULE_VERSION(APEX_DRIVER_VERSION);
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("John Joseph <jnjoseph@google.com>");
+MODULE_DEVICE_TABLE(pci, apex_pci_ids);
+module_init(apex_init);
+module_exit(apex_exit);
