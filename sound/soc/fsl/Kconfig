@@ -545,6 +545,17 @@ config SND_SOC_IMX_PDM_MIC
 	  Say Y if you want to add support for SoC Audio support for i.MX boards
 	  with PDM microphones on SAI.
 
+config SND_SOC_IMX_PCM186X
+        tristate "SoC Audio support for i.MX boards with pcm186x"
+        depends on OF && I2C
+        select SND_SOC_PCM186X
+        select SND_SOC_IMX_PCM_DMA
+        select SND_SOC_FSL_SAI
+        help
+          SoC Audio support for i.MX boards with pcm186x
+          Say Y if you want to add support for SoC audio on an i.MX board with
+          a pcm186x codec.
+
 endif # SND_IMX_SOC
 
 endmenu
