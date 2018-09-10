@@ -1,5 +1,6 @@
 /*
  * Copyright 2012-2016 Freescale Semiconductor, Inc.
+ * Copyright 2017-2018 NXP
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -209,6 +210,8 @@ struct fsl_sai {
 	unsigned int mclk_streams;
 	unsigned int slots;
 	unsigned int slot_width;
+	unsigned int tx_mask;
+	unsigned int rx_mask;
 	unsigned int bitclk_freq;
 
 	struct snd_dmaengine_dai_dma_data dma_params_rx;

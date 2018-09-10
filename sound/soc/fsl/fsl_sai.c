@@ -2,6 +2,7 @@
  * Freescale ALSA SoC Digital Audio Interface (SAI) driver.
  *
  * Copyright 2012-2016 Freescale Semiconductor, Inc.
+ * Copyright 2017-2018 NXP
  *
  * This program is free software, you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -203,6 +204,8 @@ static int fsl_sai_set_dai_tdm_slot(struct snd_soc_dai *cpu_dai, u32 tx_mask,
 
 	sai->slots = slots;
 	sai->slot_width = slot_width;
+	sai->tx_mask = tx_mask;
+	sai->rx_mask = rx_mask;
 
 	return 0;
 }
@@ -693,8 +696,16 @@ static int fsl_sai_hw_params(struct snd_pcm_substream *substream,
 	regmap_update_bits(sai->regmap, FSL_SAI_xCR5(tx, offset),
 			   FSL_SAI_CR5_WNW_MASK | FSL_SAI_CR5_W0W_MASK |
 			   FSL_SAI_CR5_FBT_MASK, val_cr5);
-	regmap_write(sai->regmap, FSL_SAI_xMR(tx),
-			~0UL - ((1 << min(channels, slots)) - 1));
+
+	if(tx && sai->tx_mask) {
+		regmap_write(sai->regmap, FSL_SAI_xMR(tx), sai->tx_mask);
+	} else if (!tx && sai->rx_mask) {
+		regmap_write(sai->regmap, FSL_SAI_xMR(tx), sai->rx_mask);
+	} else {
+		regmap_write(sai->regmap, FSL_SAI_xMR(tx),
+				~0UL - ((1 << min(channels, slots)) - 1));
+	}
+
 	return 0;
 }
 
