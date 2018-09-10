@@ -1,0 +1,74 @@
+/*
+ * Copyright 2018 NXP
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "fsl-imx8mq-phanbell.dts"
+
+/ {
+
+  sound-pcm1864 {
+    compatible = "fsl,imx-audio-pcm186x";
+    model = "pcm1864-audio";
+    cpu-dai = <&sai1>;
+    cpu-master = <1>;
+		audio-codec = <&pcm1864>;
+
+		audio-routing =
+			"VINL1", "ADC1 Left Capture Source",
+			"VINR1", "ADC1 Left Capture Source",
+			"ADC1 Left Capture Source", "ADC1",
+			"VINL2", "ADC1 Right Capture Source",
+			"VINR2", "ADC1 Right Capture Source",
+			"ADC1 Right Capture Source", "ADC1",
+			"VINL3", "ADC2 Left Capture Source",
+			"VINR3", "ADC2 Left Capture Source",
+			"ADC2 Left Capture Source", "ADC2",
+			"VINL4", "ADC2 Right Capture Source",
+			"VINR4", "ADC2 Right Capture Source",
+			"ADC2 Right Capture Source", "ADC2";
+  };
+};
+
+&iomuxc {
+	imx8mq-phanbell {
+		pinctrl_sai1: sai1grp {
+			fsl,pins = <
+				MX8MQ_IOMUXC_SAI1_TXFS_SAI1_TX_SYNC     0xd6
+				MX8MQ_IOMUXC_SAI1_TXC_SAI1_TX_BCLK      0xd6
+				MX8MQ_IOMUXC_SAI1_MCLK_SAI1_MCLK        0xd6
+				MX8MQ_IOMUXC_SAI1_RXD0_SAI1_RX_DATA0    0xd6
+			>;
+		};
+	};
+};
+
+&sai1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_sai1>;
+	assigned-clocks =
+		<&clk IMX8MQ_CLK_SAI1_SRC>,
+		<&clk IMX8MQ_CLK_SAI1_DIV>;
+	assigned-clock-parents = <&clk IMX8MQ_AUDIO_PLL1_OUT>;
+	assigned-clock-rates = <0>, <24576000>;
+	status = "okay";
+};
+
+&i2c3 {
+	status = "okay";
+
+	pcm1864: pcm1864@4a {
+		compatible = "ti,pcm1864";
+		reg = <0x4a>;
+		status = "okay";
+	};
+};
