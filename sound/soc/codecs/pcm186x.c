@@ -158,7 +158,7 @@ static const struct snd_soc_dapm_widget pcm1863_dapm_widgets[] = {
 	 * Put the codec into SLEEP mode when not in use, allowing the
 	 * Energysense mechanism to operate.
 	 */
-	SND_SOC_DAPM_ADC("ADC", "HiFi Capture", PCM186X_POWER_CTRL, 1,  0),
+	SND_SOC_DAPM_ADC("ADC", "HiFi Capture", PCM186X_POWER_CTRL, 1,  1),
 };
 
 static const struct snd_soc_dapm_widget pcm1865_dapm_widgets[] = {
@@ -184,8 +184,9 @@ static const struct snd_soc_dapm_widget pcm1865_dapm_widgets[] = {
 	 * Put the codec into SLEEP mode when not in use, allowing the
 	 * Energysense mechanism to operate.
 	 */
-	SND_SOC_DAPM_ADC("ADC1", "HiFi Capture 1", PCM186X_POWER_CTRL, 1,  0),
-	SND_SOC_DAPM_ADC("ADC2", "HiFi Capture 2", PCM186X_POWER_CTRL, 1,  0),
+	/*  bit 1 set means sleep, then ADC turns off, so the winvert should be 1 */
+	SND_SOC_DAPM_ADC("ADC1", "HiFi Capture 1", PCM186X_POWER_CTRL, 1,  1),
+	SND_SOC_DAPM_ADC("ADC2", "HiFi Capture 2", PCM186X_POWER_CTRL, 1,  1),
 };
 
 static const struct snd_soc_dapm_route pcm1863_dapm_routes[] = {
@@ -633,6 +634,14 @@ static const struct regmap_range_cfg pcm186x_range = {
 	.window_len = PCM186X_PAGE_LEN,
 };
 
+static const struct reg_default pcm186x_reg_defaults[] = {
+	// differential input
+	{0x06, 0x50}, // {VIN1P, VIN1M}[DIFF]
+	{0x07, 0x50}, // {VIN2P, VIN2M}[DIFF]
+	{0x08, 0x60}, // {VIN4P, VIN4M}[DIFF]
+	{0x09, 0x60}, // {VIN3P, VIN3M}[DIFF]
+};
+
 const struct regmap_config pcm186x_regmap = {
 	.reg_bits = 8,
 	.val_bits = 8,
@@ -645,6 +654,9 @@ const struct regmap_config pcm186x_regmap = {
 	.max_register = PCM186X_MAX_REGISTER,
 
 	.cache_type = REGCACHE_RBTREE,
+
+	.reg_defaults = pcm186x_reg_defaults,
+	.num_reg_defaults = ARRAY_SIZE(pcm186x_reg_defaults),
 };
 EXPORT_SYMBOL_GPL(pcm186x_regmap);
 
