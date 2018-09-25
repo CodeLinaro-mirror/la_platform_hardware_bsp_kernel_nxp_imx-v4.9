@@ -3127,8 +3127,9 @@ static int ov5645_probe(struct i2c_client *client,
 		dev_warn(dev,
 			 "ae_target missing in dev tree, using default %d\n",
 			 AE_Target);
+	} else {
+		pr_info("ov5645 ae_target %d\n", AE_Target);
 	}
-
 	clk_prepare_enable(ov5645_data.sensor_clk);
 
 	ov5645_data.io_init = ov5645_reset;

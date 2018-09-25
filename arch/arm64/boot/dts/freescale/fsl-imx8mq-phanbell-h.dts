@@ -63,6 +63,12 @@
 	status = "okay";
 };
 
+&i2c2 {
+	ov5645_mipi: ov5645_mipi@3c {
+		ae_target = <100>;
+	};
+};
+
 &i2c3 {
 	status = "okay";
 
