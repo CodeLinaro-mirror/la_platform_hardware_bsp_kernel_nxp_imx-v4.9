@@ -1833,20 +1833,23 @@ static inline void ov5645_power_down(int enable)
 {
 	if (pwn_gpio < 0)
 		return;
-
+#if 0 // Keep power always
 	if (enable)
 		gpio_set_value_cansleep(pwn_gpio, 0);
 	else
 		gpio_set_value_cansleep(pwn_gpio, 1);
-
-	msleep(2);
+#endif
+	gpio_set_value_cansleep(pwn_gpio, 1);
+	pr_info("power_down msleep +\n");
+	msleep(20);
+	pr_info("power_down msleep -\n");
 }
 
 static void ov5645_reset(void)
 {
 	if (rst_gpio < 0 || pwn_gpio < 0)
 		return;
-
+#if 0 // keep power on always
 	/* camera reset */
 	gpio_set_value(rst_gpio, 1);
 
@@ -1856,18 +1859,21 @@ static void ov5645_reset(void)
 
 	gpio_set_value(pwn_gpio, 1);
 	msleep(5);
-
+#endif
 	gpio_set_value(rst_gpio, 0);
-	msleep(1);
-
+	pr_info("reset msleep 1\n");
+	msleep(20);
+	pr_info("reset msleep 2\n");
 	gpio_set_value(rst_gpio, 1);
-	msleep(5);
+	pr_info("reset msleep 3\n");
+	msleep(20);
+	pr_info("reset msleep 4\n");
 }
 
 static int ov5645_regulator_enable(struct device *dev)
 {
 	int ret = 0;
-
+#if 0 // Do not touch any regulator
 	io_regulator = devm_regulator_get(dev, "DOVDD");
 	if (!IS_ERR(io_regulator)) {
 		regulator_set_voltage(io_regulator,
@@ -1922,7 +1928,7 @@ static int ov5645_regulator_enable(struct device *dev)
 		analog_regulator = NULL;
 		pr_err("%s: cannot get analog voltage error\n", __func__);
 	}
-
+#endif
 	return ret;
 }
 
@@ -1937,9 +1943,9 @@ static s32 ov5645_write_reg(u16 reg, u8 val)
 	if (i2c_master_send(ov5645_data.i2c_client, au8Buf, 3) < 0) {
 		pr_err("%s:write reg error:reg=%x,val=%x, retrying once\n",
 			__func__, reg, val);
-
+		pr_info("write_reg msleep +\n");
 		msleep(1);
-
+		pr_info("write_reg msleep -\n");
 		if (i2c_master_send(ov5645_data.i2c_client, au8Buf, 3) < 0) {
 			pr_err("%s:write reg error:reg=%x,val=%x, failed again, returning\n",
 				__func__, reg, val);
@@ -1986,7 +1992,9 @@ static void ov5645_enable_af(bool enable)
 		ov5645_write_reg(0x3022, 0x04);
 		do {
 			ov5645_read_reg(0x3029, &temp);
+			pr_info("enable_af msleep +\n");
 			msleep(5);
+			pr_info("enable_af msleep -\n");
 			// If the status reg 0x3029 reads 0x20 we have stabilized
 		} while (temp != 0x20 && cnt-- > 0);
 
@@ -2313,8 +2321,11 @@ static int ov5645_download_firmware(struct reg_value *pModeSetting, s32 ArySize)
 		if (retval < 0)
 			goto err;
 
-		if (Delay_ms)
+		if (Delay_ms) {
+			pr_info("download_fw msleep +\n");
 			msleep(Delay_ms);
+			pr_info("download_fw msleep -\n");
+                }
 	}
 err:
 	return retval;
@@ -2334,7 +2345,9 @@ static void ov5645_dnld_af_fw(void)
 
 	do {
 		ov5645_read_reg(0x3029, &temp);
+		pr_info("dnld_af_fw msleep +\n");
 		msleep(5);
+		pr_info("dnld_af_fw msleep -\n");
 	} while (temp != 0x70 && --cnt > 0);
 
 	if (temp != 0x70)
@@ -2541,8 +2554,9 @@ static int ov5645_init_mode(enum ov5645_frame_rate frame_rate,
 		pModeSetting = ov5645_setting_30fps_VGA_640_480;
 		ArySize = ARRAY_SIZE(ov5645_setting_30fps_VGA_640_480);
 		retval = ov5645_download_firmware(pModeSetting, ArySize);
-
+#if 0 // disable for now
 		ov5645_dnld_af_fw();
+#endif
 
 	} else if ((dn_mode == SUBSAMPLING && orig_dn_mode == SCALING) ||
 			(dn_mode == SCALING && orig_dn_mode == SUBSAMPLING)) {
@@ -2562,7 +2576,6 @@ static int ov5645_init_mode(enum ov5645_frame_rate frame_rate,
 	OV5645_get_light_freq();
 	OV5645_set_bandingfilter();
 	ov5645_set_virtual_channel(ov5645_data.csi);
-
 	/* add delay to wait for sensor stable */
 	if (mode == ov5645_mode_QSXGA_2592_1944) {
 		/* dump the first two frames: 1/7.5*2
@@ -2572,8 +2585,9 @@ static int ov5645_init_mode(enum ov5645_frame_rate frame_rate,
 		/* dump the first eighteen frames: 1/30*18 */
 		msec_wait4stable = 600;
 	}
+# if 0 // disable for now
 	msleep(msec_wait4stable);
-
+#endif
 err:
 	return retval;
 }
@@ -2590,7 +2604,7 @@ static int ov5645_s_power(struct v4l2_subdev *sd, int on)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct ov5645 *sensor = to_ov5645(client);
-
+#if 0 // Do not touch any regulator
 	if (on && !sensor->on) {
 		if (io_regulator)
 			if (regulator_enable(io_regulator) != 0)
@@ -2614,7 +2628,7 @@ static int ov5645_s_power(struct v4l2_subdev *sd, int on)
 		if (gpo_regulator)
 			regulator_disable(gpo_regulator);
 	}
-
+#endif
 	sensor->on = on;
 
 	return 0;
@@ -2923,7 +2937,6 @@ static int init_device(void)
 		return -EINVAL; /* Only support 15fps or 30fps now. */
 
 	ret = ov5645_init_mode(frame_rate, ov5645_mode_INIT, ov5645_mode_INIT);
-
 	return ret;
 }
 
@@ -3056,6 +3069,7 @@ static int ov5645_probe(struct i2c_client *client,
 	int retval;
 	u8 chip_id_high, chip_id_low;
 
+	pr_info("ov5645_probe\n");
 	/* ov5645 pinctrl */
 	pinctrl = devm_pinctrl_get_select_default(dev);
 	if (IS_ERR(pinctrl))
@@ -3143,12 +3157,13 @@ static int ov5645_probe(struct i2c_client *client,
 	ov5645_data.streamcap.timeperframe.denominator = DEFAULT_FPS;
 	ov5645_data.streamcap.timeperframe.numerator = 1;
 
+#if 0 // disable for now
 	ov5645_regulator_enable(&client->dev);
+#endif
 
 	ov5645_reset();
 
 	ov5645_power_down(0);
-
 	retval = ov5645_read_reg(OV5645_CHIP_ID_HIGH_BYTE, &chip_id_high);
 	if (retval < 0 || chip_id_high != 0x56) {
 		pr_warning("camera ov5645_mipi is not found\n");
@@ -3161,7 +3176,6 @@ static int ov5645_probe(struct i2c_client *client,
 		clk_disable_unprepare(ov5645_data.sensor_clk);
 		return -ENODEV;
 	}
-
 	retval = init_device();
 	if (retval < 0) {
 		clk_disable_unprepare(ov5645_data.sensor_clk);
@@ -3169,17 +3183,13 @@ static int ov5645_probe(struct i2c_client *client,
 		ov5645_power_down(1);
 		return retval;
 	}
-
 	v4l2_i2c_subdev_init(&ov5645_data.subdev, client, &ov5645_subdev_ops);
-
 	ov5645_data.subdev.grp_id = 678;
 	retval = v4l2_async_register_subdev(&ov5645_data.subdev);
 	if (retval < 0)
 		dev_err(&client->dev,
 					"%s--Async register failed, ret=%d\n", __func__, retval);
-
 	OV5645_stream_off();
-	pr_info("camera ov5645_mipi is found\n");
 	return retval;
 }
 
