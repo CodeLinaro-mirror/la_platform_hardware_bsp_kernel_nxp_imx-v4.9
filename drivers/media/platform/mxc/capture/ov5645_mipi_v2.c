@@ -1833,41 +1833,31 @@ static inline void ov5645_power_down(int enable)
 {
 	if (pwn_gpio < 0)
 		return;
-#if 0 // Keep power always
 	if (enable)
 		gpio_set_value_cansleep(pwn_gpio, 0);
 	else
 		gpio_set_value_cansleep(pwn_gpio, 1);
-#endif
-	gpio_set_value_cansleep(pwn_gpio, 1);
-	pr_info("power_down msleep +\n");
-	msleep(20);
-	pr_info("power_down msleep -\n");
 }
 
 static void ov5645_reset(void)
 {
 	if (rst_gpio < 0 || pwn_gpio < 0)
 		return;
-#if 0 // keep power on always
+	pr_info("ov5645_reset+\n");
 	/* camera reset */
 	gpio_set_value(rst_gpio, 1);
 
-	/* camera power dowmn */
+	/* camera power down */
 	gpio_set_value(pwn_gpio, 0);
 	msleep(5);
 
 	gpio_set_value(pwn_gpio, 1);
 	msleep(5);
-#endif
 	gpio_set_value(rst_gpio, 0);
-	pr_info("reset msleep 1\n");
-	msleep(20);
-	pr_info("reset msleep 2\n");
+	msleep(30); // min 20 ms
 	gpio_set_value(rst_gpio, 1);
-	pr_info("reset msleep 3\n");
-	msleep(20);
-	pr_info("reset msleep 4\n");
+	msleep(30); // min 20 ms
+	pr_info("ov5645_reset-\n");
 }
 
 static int ov5645_regulator_enable(struct device *dev)
@@ -1943,9 +1933,7 @@ static s32 ov5645_write_reg(u16 reg, u8 val)
 	if (i2c_master_send(ov5645_data.i2c_client, au8Buf, 3) < 0) {
 		pr_err("%s:write reg error:reg=%x,val=%x, retrying once\n",
 			__func__, reg, val);
-		pr_info("write_reg msleep +\n");
 		msleep(1);
-		pr_info("write_reg msleep -\n");
 		if (i2c_master_send(ov5645_data.i2c_client, au8Buf, 3) < 0) {
 			pr_err("%s:write reg error:reg=%x,val=%x, failed again, returning\n",
 				__func__, reg, val);
@@ -1985,6 +1973,7 @@ static void ov5645_enable_af(bool enable)
 {
 	u8 temp;
 	int cnt = 40;
+	pr_info("enable_af+\n");
 	/* It typically takes 50 ms for AF to stabilize. Setting the
 	   retry count to 40 gives us enough margin to always succeed */
 	if (enable) {
@@ -1992,9 +1981,7 @@ static void ov5645_enable_af(bool enable)
 		ov5645_write_reg(0x3022, 0x04);
 		do {
 			ov5645_read_reg(0x3029, &temp);
-			pr_info("enable_af msleep +\n");
 			msleep(5);
-			pr_info("enable_af msleep -\n");
 			// If the status reg 0x3029 reads 0x20 we have stabilized
 		} while (temp != 0x20 && cnt-- > 0);
 
@@ -2003,6 +1990,7 @@ static void ov5645_enable_af(bool enable)
 	} else {
 		ov5645_write_reg(0x3022, 0x08);
 	}
+	pr_info("enable_af-\n");
 }
 
 static int prev_sysclk, prev_HTS;
@@ -2011,12 +1999,16 @@ static int AE_low, AE_high, AE_Target = 52;
 static void OV5645_stream_on(void)
 {
 	ov5645_write_reg(0x4202, 0x00);
+#if 0 // TODO: control this from device tree
 	ov5645_enable_af(true);
+#endif
 }
 
 static void OV5645_stream_off(void)
 {
+#if 0 // TODO: control this from device tree
 	ov5645_enable_af(false);
+#endif
 	ov5645_write_reg(0x4202, 0x0f);
 	ov5645_write_reg(0x3008, 0x42);
 }
@@ -2300,7 +2292,7 @@ static int ov5645_download_firmware(struct reg_value *pModeSetting, s32 ArySize)
 	register u8 Val = 0;
 	u8 RegVal = 0;
 	int i, retval = 0;
-
+	pr_info("download_fw+\n");
 	for (i = 0; i < ArySize; ++i, ++pModeSetting) {
 		Delay_ms = pModeSetting->u32Delay_ms;
 		RegAddr = pModeSetting->u16RegAddr;
@@ -2322,11 +2314,10 @@ static int ov5645_download_firmware(struct reg_value *pModeSetting, s32 ArySize)
 			goto err;
 
 		if (Delay_ms) {
-			pr_info("download_fw msleep +\n");
 			msleep(Delay_ms);
-			pr_info("download_fw msleep -\n");
                 }
 	}
+	pr_info("download_fw-\n");
 err:
 	return retval;
 }
@@ -2338,20 +2329,19 @@ static void ov5645_dnld_af_fw(void)
 	int retval = 0;
 	u8 temp;
 	int cnt = 40;
-
+	pr_info("dnld_af_fw+\n");
 	pModeSetting = ov5645_af_setting;
 	ArySize = ARRAY_SIZE(ov5645_af_setting);
 	retval = ov5645_download_firmware(pModeSetting, ArySize);
 
 	do {
 		ov5645_read_reg(0x3029, &temp);
-		pr_info("dnld_af_fw msleep +\n");
-		msleep(5);
-		pr_info("dnld_af_fw msleep -\n");
+		msleep(2);
 	} while (temp != 0x70 && --cnt > 0);
 
 	if (temp != 0x70)
 		pr_warning("%s: Failed to download AF firmware\n", __func__);
+	pr_info("dnld_af_fw-\n");
 }
 
 /* sensor changes between scaling and subsampling
@@ -3161,9 +3151,9 @@ static int ov5645_probe(struct i2c_client *client,
 	ov5645_regulator_enable(&client->dev);
 #endif
 
+	ov5645_power_down(0);
 	ov5645_reset();
 
-	ov5645_power_down(0);
 	retval = ov5645_read_reg(OV5645_CHIP_ID_HIGH_BYTE, &chip_id_high);
 	if (retval < 0 || chip_id_high != 0x56) {
 		pr_warning("camera ov5645_mipi is not found\n");
