@@ -148,6 +148,12 @@ void fts_tp_state_recovery(struct i2c_client *client)
 *****************************************************************************/
 int fts_reset_proc(int hdelayms)
 {
+	// Some board's ts reset gpio is same as dsi gpio,
+	// just reset in dsi once.
+	if (!gpio_is_valid(fts_wq_data->pdata->reset_gpio)) {
+		return 0;
+	}
+
 	gpio_direction_output(fts_wq_data->pdata->reset_gpio, 0);
 	msleep(20);
 	gpio_direction_output(fts_wq_data->pdata->reset_gpio, 1);
@@ -1430,7 +1436,6 @@ static void __exit fts_ts_exit(void)
 {
 	i2c_del_driver(&fts_ts_driver);
 }
-
 module_init(fts_ts_init);
 module_exit(fts_ts_exit);
 

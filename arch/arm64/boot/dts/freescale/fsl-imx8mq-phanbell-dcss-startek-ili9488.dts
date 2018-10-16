@@ -119,6 +119,23 @@
 	status = "okay";
 };
 
+&i2c2 {
+	status = "okay";
+
+	focaltech@38 {
+		compatible = "focaltech,fts";
+		reg = <0x38>;
+		pinctrl-0 = <&pinctrl_ts_int>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <12 0x02>;
+		focaltech,panel-type = <FT6236>;
+		focaltech,irq-gpio = <&gpio3 12 0x02>;
+		// focaltech,reset-gpio // share with dsi
+		focaltech,max-touch-number = <5>;
+		focaltech,display-coords =  <0 0 320 480>;
+	};
+};
+
 &iomuxc {
 	imx8mq-evk {
 		pinctrl_mipi_dsi_en: mipi_dsi_en {
@@ -132,6 +149,12 @@
 		pinctrl_bl_pwm0: bl_pwm0 {
 			fsl,pins = <
 				MX8MQ_IOMUXC_GPIO1_IO01_PWM1_OUT   0x16 // backlight
+			>;
+		};
+
+		pinctrl_ts_int: ts_int {
+			fsl,pins = <
+				MX8MQ_IOMUXC_NAND_DATA06_GPIO3_IO12   0x16 // touch screen interrupt
 			>;
 		};
 	};
