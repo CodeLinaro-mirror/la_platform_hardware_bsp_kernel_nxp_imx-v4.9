@@ -97,4 +97,11 @@ config DRM_PANEL_TIANMA_S6D6FP0A2
 	help
 		Say Y here if you want to enable the Tianma Panel.
 
+config DRM_PANEL_STARTEK_ILI9488
+	tristate "Startek Panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	help
+		Say Y here if you want to enable the Startek Panel.
+
 endmenu

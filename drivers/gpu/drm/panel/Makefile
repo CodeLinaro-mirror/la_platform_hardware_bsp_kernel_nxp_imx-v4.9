@@ -8,4 +8,5 @@ obj-$(CONFIG_DRM_PANEL_SHARP_LQ101R1SX01) += panel-sharp-lq101r1sx01.o
 obj-$(CONFIG_DRM_PANEL_SHARP_LS043T1LE01) += panel-sharp-ls043t1le01.o
 obj-$(CONFIG_DRM_PANEL_RAYDIUM_RM67191) += panel-raydium-rm67191.o
 obj-$(CONFIG_DRM_PANEL_TIANMA_S6D6FP0A2) += panel-tianma-s6d6fp0a2.o
+obj-$(CONFIG_DRM_PANEL_STARTEK_ILI9488) += panel-startek-ili9488.o
 
