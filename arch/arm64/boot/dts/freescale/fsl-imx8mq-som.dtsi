@@ -263,7 +263,10 @@
 		bd71837,pmic-buck3-uses-i2c-dvs;
 		bd71837,pmic-buck3-dvs-voltage = <850000>, <0>, <0>; /* VDD_GPU: Run */
 		bd71837,pmic-buck4-uses-i2c-dvs;
-		bd71837,pmic-buck4-dvs-voltage = <1000000>, <0>, <0>; /* VDD_VPU: Run */
+		bd71837,pmic-buck4-dvs-voltage = <850000>, <0>, <0>; /* VDD_VPU: Run */
+		bd71837,pmic-buck5-uses-i2c-dvs;
+		bd71837,pmic-buck5-dvs-voltage = <900000>, <700000>, <0>; /* VDD_DRAM: Run-Idle */
+
 
 		gpo {
 			rohm,drv = <0x0C>;	/* 0b0000_1100 all gpos with cmos output mode */
@@ -298,6 +301,7 @@
 				regulator-min-microvolt = <700000>;
 				regulator-max-microvolt = <1300000>;
 				regulator-boot-on;
+				regulator-always-on;
 			};
 
 			buck4_reg: regulator@3 {
@@ -395,6 +399,7 @@
 				regulator-min-microvolt = <900000>;
 				regulator-max-microvolt = <1800000>;
 				regulator-boot-on;
+				regulator-always-on;
 			};
 
 			ldo7_reg: regulator@14 {
