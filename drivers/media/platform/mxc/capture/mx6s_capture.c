@@ -41,6 +41,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
+#include <linux/reboot.h>
 #include <linux/slab.h>
 #include <linux/time.h>
 #include <linux/media-bus-format.h>
@@ -1116,6 +1117,16 @@ static irqreturn_t mx6s_csi_irq_handler(int irq, void *data)
 	}
 
 	if (status & BIT_HRESP_ERR_INT) {
+		/* hresponse error hangs the whole system.
+		   Sometimes when there are only one or two error,
+		   hanging does not happen.
+		   Restart the whole system if it happens more than once. */
+		static int hresponse_error_count = 0;
+		hresponse_error_count++;
+		if (hresponse_error_count >= 2) {
+			pr_warning("***Got multiple hresponse error, restarting system\n");
+			emergency_restart();
+		}
 		dev_warn(csi_dev->dev, "%s Hresponse error detected\n",
 			__func__);
 		csi_error_recovery(csi_dev);
@@ -1530,8 +1541,9 @@ static int mx6s_vidioc_streamon(struct file *file, void *priv,
 		return -EINVAL;
 
 	ret = vb2_streamon(&csi_dev->vb2_vidq, i);
+
 	if (!ret)
-		v4l2_subdev_call(sd, video, s_stream, 1);
+		ret = v4l2_subdev_call(sd, video, s_stream, 1);
 
 	return ret;
 }

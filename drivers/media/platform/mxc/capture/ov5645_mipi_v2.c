@@ -2575,12 +2575,13 @@ static int ov5645_init_mode(enum ov5645_frame_rate frame_rate,
 		/* dump the first eighteen frames: 1/30*18 */
 		msec_wait4stable = 600;
 	}
-# if 0 // disable for now
+
 	msleep(msec_wait4stable);
-#endif
 err:
 	return retval;
 }
+
+static int init_device(void);
 
 /*!
  * ov5645_s_power - V4L2 sensor interface handler for VIDIOC_S_POWER ioctl
@@ -2594,6 +2595,21 @@ static int ov5645_s_power(struct v4l2_subdev *sd, int on)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct ov5645 *sensor = to_ov5645(client);
+	pr_info("ov5645_s_power on:%d\n", on);
+	if (sensor->on == on) {
+		pr_info("ov5645_s_power, already in the target state\n");
+		return 0;
+	}
+	sensor->on = on;
+	if (on) {
+		pr_info("power on\n");
+		ov5645_power_down(0);
+		ov5645_reset();
+		return init_device();
+	} else {
+		pr_info("power off\n");
+		ov5645_power_down(1);
+	}
 #if 0 // Do not touch any regulator
 	if (on && !sensor->on) {
 		if (io_regulator)
@@ -2619,8 +2635,6 @@ static int ov5645_s_power(struct v4l2_subdev *sd, int on)
 			regulator_disable(gpo_regulator);
 	}
 #endif
-	sensor->on = on;
-
 	return 0;
 }
 
@@ -2679,6 +2693,7 @@ static int ov5645_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *a)
  */
 static int ov5645_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *a)
 {
+	pr_info("ov5645_s_parm\n");
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct ov5645 *sensor = to_ov5645(client);
 	struct v4l2_fract *timeperframe = &a->parm.capture.timeperframe;
@@ -2759,6 +2774,7 @@ static int ov5645_set_fmt(struct v4l2_subdev *sd,
 			struct v4l2_subdev_pad_config *cfg,
 			struct v4l2_subdev_format *format)
 {
+	pr_info("ov5645_set_fmt\n");
 	struct v4l2_mbus_framefmt *mf = &format->format;
 	const struct ov5645_datafmt *fmt = ov5645_find_datafmt(mf->code);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -2932,6 +2948,7 @@ static int init_device(void)
 
 static int ov5645_s_stream(struct v4l2_subdev *sd, int enable)
 {
+	pr_info("ov5645_s_stream en:%d\n", enable);
 	if (enable)
 		OV5645_stream_on();
 	else
