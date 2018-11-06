@@ -2704,6 +2704,10 @@ static int rt5645_hw_params(struct snd_pcm_substream *substream,
 	unsigned int val_len = 0, val_clk, mask_clk, dl_sft;
 	int pre_div, bclk_ms, frame_size;
 
+	dev_info(codec->dev, "%s() rate=%u format=0x%x width=%u channels=%u\n",
+		__func__, params_rate(params), params_format(params),
+		params_width(params), params_channels(params));
+
 	rt5645->lrck[dai->id] = params_rate(params);
 	pre_div = rl6231_get_clk_info(rt5645->sysclk, rt5645->lrck[dai->id]);
 	if (pre_div < 0) {

@@ -264,7 +264,7 @@ static int pcm186x_codec_probe(struct snd_soc_codec *codec)
 	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 	struct pcm186x_priv *priv = dev_get_drvdata(codec->dev);
 
-	dev_info(codec->dev, "%s(), pcm186x type %d\n", priv->type);
+	dev_info(codec->dev, "%s(), pcm186x type %d\n", __func__, priv->type);
 
 	if ((priv->type == PCM1864) || (priv->type == PCM1865)) {
 		snd_soc_add_codec_controls(codec, pcm1865_snd_controls,
@@ -298,7 +298,7 @@ static int pcm186x_hw_params(struct snd_pcm_substream *substream,
 	u8 tdm_tx_sel = 0;
 	u8 pcm_cfg = 0;
 
-	dev_dbg(codec->dev, "%s() rate=%u format=0x%x width=%u channels=%u\n",
+	dev_info(codec->dev, "%s() rate=%u format=0x%x width=%u channels=%u\n",
 		__func__, rate, format, width, channels);
 
 	switch (width) {
@@ -458,7 +458,7 @@ static int pcm186x_set_tdm_slot(struct snd_soc_dai *dai, unsigned int tx_mask,
 	struct pcm186x_priv *priv = snd_soc_codec_get_drvdata(codec);
 	unsigned int first_slot, last_slot, tdm_offset;
 
-	dev_dbg(codec->dev,
+	dev_info(codec->dev,
 		"%s() tx_mask=0x%x rx_mask=0x%x slots=%d slot_width=%d\n",
 		__func__, tx_mask, rx_mask, slots, slot_width);
 
@@ -537,7 +537,7 @@ static int pcm186x_power_on(struct snd_soc_codec *codec)
 	struct pcm186x_priv *priv = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
 
-	dev_dbg(codec->dev, "enter %s()\n", __func__);
+	dev_info(codec->dev, "enter %s()\n", __func__);
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(priv->supplies),
 				    priv->supplies);
@@ -565,7 +565,7 @@ static int pcm186x_power_off(struct snd_soc_codec *codec)
 	struct pcm186x_priv *priv = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
-	dev_dbg(codec->dev, "enter %s()\n", __func__);
+	dev_info(codec->dev, "enter %s()\n", __func__);
 
 	snd_soc_update_bits(codec, PCM186X_POWER_CTRL,
 			    PCM186X_PWR_CTRL_PWRDN, PCM186X_PWR_CTRL_PWRDN);
