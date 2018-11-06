@@ -25,10 +25,13 @@
 #include <sound/tlv.h>
 #include "pcm186x.h"
 
+
 static const char * const pcm186x_supply_names[] = {
+#if 0 // no power control
 	"avdd",		/* Analog power supply. Connect to 3.3-V supply. */
 	"dvdd",		/* Digital power supply. Connect to 3.3-V supply. */
 	"iovdd",	/* I/O power supply. Connect to 3.3-V or 1.8-V. */
+#endif
 };
 #define PCM186x_NUM_SUPPLIES ARRAY_SIZE(pcm186x_supply_names)
 
@@ -532,6 +535,20 @@ static struct snd_soc_dai_driver pcm1865_dai = {
 	.ops = &pcm186x_dai_ops,
 };
 
+static const struct reg_default pcm186x_reg_defaults[] = {
+	{ PCM186X_PAGE, 0},
+	// differential input
+	{0x06, 0x50}, // {VIN1P, VIN1M}[DIFF]
+	{0x07, 0x50}, // {VIN2P, VIN2M}[DIFF]
+	{0x08, 0x60}, // {VIN4P, VIN4M}[DIFF]
+	{0x09, 0x60}, // {VIN3P, VIN3M}[DIFF]
+
+	{0x01, 0x50}, // 40dB
+	{0x02, 0x50},
+	{0x03, 0x50},
+	{0x04, 0x50},
+};
+
 static int pcm186x_power_on(struct snd_soc_codec *codec)
 {
 	struct pcm186x_priv *priv = snd_soc_codec_get_drvdata(codec);
@@ -556,6 +573,12 @@ static int pcm186x_power_on(struct snd_soc_codec *codec)
 
 	snd_soc_update_bits(codec, PCM186X_POWER_CTRL,
 			    PCM186X_PWR_CTRL_PWRDN, 0);
+	// write default values
+	int i;
+	for (i = 0; i < ARRAY_SIZE(pcm186x_reg_defaults); i++) {
+		snd_soc_write(codec, pcm186x_reg_defaults[i].reg,
+			pcm186x_reg_defaults[i].def);
+	}
 
 	return 0;
 }
@@ -632,14 +655,6 @@ static const struct regmap_range_cfg pcm186x_range = {
 	.selector_reg = PCM186X_PAGE,
 	.selector_mask = 0xff,
 	.window_len = PCM186X_PAGE_LEN,
-};
-
-static const struct reg_default pcm186x_reg_defaults[] = {
-	// differential input
-	{0x06, 0x50}, // {VIN1P, VIN1M}[DIFF]
-	{0x07, 0x50}, // {VIN2P, VIN2M}[DIFF]
-	{0x08, 0x60}, // {VIN4P, VIN4M}[DIFF]
-	{0x09, 0x60}, // {VIN3P, VIN3M}[DIFF]
 };
 
 const struct regmap_config pcm186x_regmap = {
