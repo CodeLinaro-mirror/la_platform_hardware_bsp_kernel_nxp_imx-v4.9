@@ -27,6 +27,10 @@
 #define RX 0
 #define TX 1
 
+// Ref 9.3.16.4, in DSP mode, 256 BCK per frame.
+// Slot number can be caculated based on sample bits.
+#define BCK_RATIO 256
+
 /**
  * CPU private data
  *
@@ -85,6 +89,8 @@ static int imx_pcm186x_hw_params(struct snd_pcm_substream *substream,
 	dev_dbg(dev, "%s(), imx_pcm186x_hw_params, chns %d, rate %d, format 0x%x, width %d\n",
 		__func__, params_channels(params), params_rate(params),
 		params_format(params), params_width(params));
+
+	cpu_priv->slots = BCK_RATIO/params_width(params);
 
 	/* set cpu slot, for cpu sai, 0 means enable enable the slot */
 	mask = 0xfffffff0;
