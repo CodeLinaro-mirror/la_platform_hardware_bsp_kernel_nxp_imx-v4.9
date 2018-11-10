@@ -56,18 +56,38 @@ struct imx_pcm186x_data {
 	struct clk *codec_clk;
 };
 
+static unsigned int supported_rates[] = {
+	16000, 48000,
+};
+
+static struct snd_pcm_hw_constraint_list constraint_rates = {
+	.count = ARRAY_SIZE(supported_rates),
+	.list  = supported_rates,
+	.mask = 0,
+};
+
+static unsigned int supported_channels[] = {
+	1, 2, 4,
+};
+
+static struct snd_pcm_hw_constraint_list constraint_channels = {
+	.count = ARRAY_SIZE(supported_channels),
+	.list = supported_channels,
+	.mask = 0,
+};
+
 static int imx_pcm186x_startup(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	static struct snd_pcm_hw_constraint_list constraint_rates;
 	int ret;
-	static u32 support_rates[] = { 8000, 16000, 32000, 48000, 96000, 192000, };
-
-	constraint_rates.list = support_rates;
-	constraint_rates.count = ARRAY_SIZE(support_rates);
 
 	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
 						&constraint_rates);
+	if (ret)
+		return ret;
+
+	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_CHANNELS,
+						&constraint_channels);
 	if (ret)
 		return ret;
 
@@ -85,15 +105,19 @@ static int imx_pcm186x_hw_params(struct snd_pcm_substream *substream,
 	unsigned int fmt = SND_SOC_DAIFMT_DSP_B | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS;
 	int ret;
 	unsigned int mask;
+	unsigned int codec_mask;
 
-	dev_dbg(dev, "%s(), imx_pcm186x_hw_params, chns %d, rate %d, format 0x%x, width %d\n",
+	dev_info(dev, "%s(), imx_pcm186x_hw_params, chns %d, rate %d, format 0x%x, width %d\n",
 		__func__, params_channels(params), params_rate(params),
 		params_format(params), params_width(params));
 
 	cpu_priv->slots = BCK_RATIO/params_width(params);
 
+	/* set codec slot, for pcm186x codec sai, 1 means enable enable the slot */
+	codec_mask = ((0x1 << params_channels(params)) - 1);
 	/* set cpu slot, for cpu sai, 0 means enable enable the slot */
-	mask = 0xfffffff0;
+	mask = ~codec_mask;
+
 	ret = snd_soc_dai_set_tdm_slot(rtd->cpu_dai, mask, mask, cpu_priv->slots,
 					params_width(params));
 	if (ret) {
@@ -101,9 +125,7 @@ static int imx_pcm186x_hw_params(struct snd_pcm_substream *substream,
 		return ret;
 	}
 
-	/* set codec slot, for pcm186x codec sai, 1 means enable enable the slot */
-	mask = 0xf;
-	ret = snd_soc_dai_set_tdm_slot(codec_dai, mask, mask, cpu_priv->slots,
+	ret = snd_soc_dai_set_tdm_slot(codec_dai, codec_mask, codec_mask, cpu_priv->slots,
 	        params_width(params));
 	if (ret) {
 	  dev_err(dev, "failed to set codec dai tdm slot: %d\n", ret);
