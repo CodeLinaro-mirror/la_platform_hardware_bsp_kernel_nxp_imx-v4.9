@@ -382,6 +382,21 @@ static int pcm186x_hw_params(struct snd_pcm_substream *substream,
 		snd_soc_write(codec, PCM186X_LRK_DIV, div_lrck - 1);
 	}
 
+	/* Set SCK_XI_SEL as reserved. If no such setting, for 16k sample rate,
+	   will 0072: 01, 0074: 47, 0075: 01, capture mute.
+	   Ref 48k, 0074: 44, means SCK_RATIO 512, so SCK is 24576K. But in slave
+	   mode, where SCK from? Maybe it's default value, or from register 0x20[6:7},
+	   XTAL(24.576M) choosed?
+	   Set SCK_XI_SEL as reserved, then 0072: 0f, 0074: 47, 0075: 11, but really
+	   capture valid sound.
+	*/
+	if(priv->is_master_mode == false) {
+		snd_soc_update_bits(codec, PCM186X_CLK_CTRL,
+					PCM186X_CLK_CTRL_SCK_XI_SEL1, PCM186X_CLK_CTRL_SCK_XI_SEL1);
+		snd_soc_update_bits(codec, PCM186X_CLK_CTRL,
+					PCM186X_CLK_CTRL_SCK_XI_SEL0, PCM186X_CLK_CTRL_SCK_XI_SEL0);
+	}
+
 	return 0;
 }
 
