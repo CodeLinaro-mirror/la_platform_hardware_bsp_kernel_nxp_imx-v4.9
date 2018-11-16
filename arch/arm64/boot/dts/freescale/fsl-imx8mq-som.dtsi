@@ -36,6 +36,13 @@
 			enable-active-high;
 		};
 	};
+
+	fan: gpio_fan {
+		compatible = "gpio-fan";
+		gpios = <&gpio3 5 GPIO_ACTIVE_LOW>;
+		gpio-fan,speed-map = <0 0>, <8600 1>;
+		#cooling-cells = <2>;
+	};
 };
 
 &clk {
@@ -546,4 +553,21 @@
 
 &pcie0 {
 	fsl,max-link-speed = <1>;
+};
+
+&cpu_thermal {
+	trips {
+		fan_toggle0: trip4 {
+			temperature = <65000>;
+			hysteresis = <10000>;
+			type = "active";
+		};
+	};
+
+	cooling-maps {
+		map4 {
+			trip = <&fan_toggle0>;
+			cooling-device = <&fan 0 1>;
+		};
+	};
 };
