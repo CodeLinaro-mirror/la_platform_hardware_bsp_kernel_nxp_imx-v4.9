@@ -686,6 +686,16 @@ config SENSORS_LINEAGE
 	  This driver can also be built as a module.  If so, the module
 	  will be called lineage-pem.
 
+config SENSORS_LTC1695
+	tristate "LTC1695"
+	depends on I2C
+	help
+	  If you say yes here you get support for LTC1695
+	  fan speed PWM controller chips.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called ltc1695.
+
 config SENSORS_LTC2945
 	tristate "Linear Technology LTC2945"
 	depends on I2C
