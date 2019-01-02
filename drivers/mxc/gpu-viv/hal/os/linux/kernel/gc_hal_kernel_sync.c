@@ -349,7 +349,6 @@ struct fence * viv_fence_create(struct viv_sync_timeline *timeline,
 
     if (!signal->done) {
         signal->fence = (struct fence*)fence;
-        fence_get((struct fence*)fence);
     }
 
     spin_unlock(&signal->lock);
